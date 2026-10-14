@@ -960,7 +960,7 @@ pub fn fit_view(view: &mut View, doc: &Document, area: Vec2, ppp: f32, aspect: f
     view.fill_pending = false;
 }
 
-/// Android: a fit made while the soft keyboard covered most of the canvas (New Document's Enter
+/// Small screens (phones): a fit made while the soft keyboard covered most of the canvas (New Document's Enter
 /// creates the document before the keyboard goes down) left the document at a few percent. Until
 /// the user zooms or scrolls it, a fitted view fits again whenever its canvas area changes.
 fn refit_untouched(ctx: &egui::Context, view_key: (usize, bool), view: &mut View, doc: &Document, area: Vec2, ppp: f32, aspect: f32) {
@@ -2876,10 +2876,10 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     let aspect = app.ui.view.display_aspect();
     if view.fit_pending && rect.width() > 50.0 {
         fit_view(&mut view, &doc, rect.size(), ppp, aspect);
-        if cfg!(target_os = "android") {
+        if crate::touch::small_screen(&ctx) {
             remember_fit(&ctx, (idx, primary), &view, rect.size());
         }
-    } else if cfg!(target_os = "android") {
+    } else if crate::touch::small_screen(&ctx) {
         refit_untouched(&ctx, (idx, primary), &mut view, &doc, rect.size(), ppp, aspect);
     }
     if view.fill_pending && rect.width() > 50.0 {

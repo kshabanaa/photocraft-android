@@ -3317,7 +3317,10 @@ pub fn properties_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.add_space(6.0);
             widgets::hairline(ui);
             ui.add_space(8.0);
-            properties_body(app, ui);
+            // The card never runs past the bottom of the screen (a phone in landscape): a body
+            // taller than what is left scrolls. One that fits is drawn as before.
+            let room = (ui.ctx().content_rect().bottom() - ui.cursor().top() - 22.0).max(120.0);
+            egui::ScrollArea::vertical().id_salt(card_id.with("body")).max_height(room).auto_shrink([false, true]).show(ui, |ui| properties_body(app, ui));
         });
     });
     if drag != egui::Vec2::ZERO && canvas.is_positive() {

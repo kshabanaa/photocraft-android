@@ -125,8 +125,8 @@ fn show_modal<T>(
                 .min_size(egui::vec2(560.0, 400.0))
                 .max_size(max)
                 .show(ui, contents)
-        } else if cfg!(target_os = "android") {
-            // Phones: a dialog taller than the screen scrolls inside it, so every field and the
+        } else if crate::touch::small_screen(ctx) {
+            // Small screens (phones): a dialog taller than the screen scrolls inside it, so every field and the
             // OK / Cancel row stay reachable. Only vertically: a bounded width lets wide dialogs
             // (New Document) wrap and stack their content to fit.
             // The modal's area offers only last frame's size, so a dialog that shrank while the

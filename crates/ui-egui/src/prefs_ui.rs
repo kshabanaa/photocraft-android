@@ -427,7 +427,10 @@ pub const NARROW_WIDTH: f32 = 760.0;
 /// tabs (a tap opens either; the toolbar's colour chips still pick colours), once per run, so the
 /// user's own choices afterwards stay.
 fn sync_short_screen(app: &mut PhotocraftApp, ctx: &egui::Context) {
-    if app.ui.short_screen_applied || ctx.content_rect().height() >= SHORT_HEIGHT {
+    // A window's first frames can come before it has its real size: only a real short screen
+    // (a phone in landscape is about 450-520 points high) counts.
+    let height = ctx.content_rect().height();
+    if app.ui.short_screen_applied || !(240.0..SHORT_HEIGHT).contains(&height) {
         return;
     }
     app.ui.short_screen_applied = true;
@@ -518,9 +521,7 @@ pub fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
     sync_rulers(app);
     sync_display_scale(app, ctx);
     sync_narrow_dock(app, ctx);
-    if cfg!(target_os = "android") {
-        sync_short_screen(app, ctx);
-    }
+    sync_short_screen(app, ctx);
     sync_appearance(app, ctx);
     crate::theme::set_ui_font_size(ctx, app.session.prefs().interface.ui_font_size);
     presets_store(app);

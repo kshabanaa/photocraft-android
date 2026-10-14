@@ -9,6 +9,16 @@ pub fn short_screen(ctx: &egui::Context) -> bool {
     ctx.content_rect().height() < crate::prefs_ui::SHORT_HEIGHT
 }
 
+/// Whether the window is a small screen: short (a phone in landscape) or narrow (a phone in
+/// portrait). This is a size class, like a website's breakpoint, not a platform check: a phone, a
+/// desktop window made that small and the web build in a phone's browser all get the small-screen
+/// layout (dialogs that scroll inside the screen, the compact toolbar and dock), and the offscreen
+/// snapshot tool renders it on any machine.
+pub fn small_screen(ctx: &egui::Context) -> bool {
+    let room = ctx.content_rect();
+    room.height() < crate::prefs_ui::SHORT_HEIGHT || room.width() < crate::prefs_ui::NARROW_WIDTH
+}
+
 /// Floating panels (Brush Settings, Glyphs, the Gradient Editor, ...) that fit a short screen.
 pub trait FitScreen {
     /// On a short screen, a window taller than the screen scrolls as a whole instead of running off
