@@ -7,6 +7,12 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Independent builds of a fork: leave out the ArtCraft marks (the title-bar kitsune and the ArtCraft
+# community links in Help, About, the title bar and the start screen), as docs/brand/LICENSE-brand.txt
+# requires of modified versions. Official builds leave it off. See `brand::Brand`.
+unbranded = []
+
 [dependencies]
 craft-ui = { workspace = true }
 photocraft-geom = { workspace = true }

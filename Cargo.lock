@@ -4297,6 +4297,7 @@ dependencies = [
  "photocraft-codecs",
  "photocraft-engine",
  "photocraft-ui-egui",
+ "toml",
  "winit",
 ]
 
