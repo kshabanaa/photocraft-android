@@ -1240,11 +1240,18 @@ fn detect_physical_memory() -> Option<u64> {
     String::from_utf8(out.stdout).ok()?.trim().parse().ok()
 }
 
-#[cfg(target_os = "linux")]
+/// Android is not `linux` in Rust, but its kernel exposes the same `/proc/meminfo` to apps.
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn detect_physical_memory() -> Option<u64> {
-    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+    meminfo_total(&std::fs::read_to_string("/proc/meminfo").ok()?)
+}
+
+/// Total RAM in bytes from `/proc/meminfo` text (its `MemTotal:` line, in kB). `None` when the
+/// line is missing, malformed or zero, or the byte count overflows.
+#[cfg(any(test, target_os = "linux", target_os = "android"))]
+fn meminfo_total(info: &str) -> Option<u64> {
     let kb: u64 = info.lines().find_map(|l| l.strip_prefix("MemTotal:"))?.trim().trim_end_matches("kB").trim().parse().ok()?;
-    kb.checked_mul(1024)
+    kb.checked_mul(1024).filter(|b| *b > 0)
 }
 
 #[cfg(target_os = "freebsd")]
@@ -1258,7 +1265,7 @@ fn detect_physical_memory() -> Option<u64> {
     winsafe::GlobalMemoryStatusEx().map(|m| m.ullTotalPhys).ok().filter(|b| *b > 0)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "freebsd", windows)))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android", target_os = "freebsd", windows)))]
 fn detect_physical_memory() -> Option<u64> {
     None
 }
@@ -2206,6 +2213,32 @@ mod tests {
         assert_eq!(memory_budget(8 * G, 10 * G, Some(48 * G)), MIN_GPU_BUDGET);
         assert_eq!(memory_budget(64 * G, 0, None), 4 * G);
         assert!(physical_memory().is_none_or(|b| b >= 256 << 20));
+    }
+
+    /// Linux and Android read `MemTotal:` from `/proc/meminfo`; anything unreadable is unknown
+    /// (the budgets then assume 16 GB), never a panic.
+    #[test]
+    fn meminfo_total_reads_mem_total_in_bytes() {
+        // The head of an 8 GB Android phone's `/proc/meminfo`.
+        let phone = "MemTotal:        7810772 kB\nMemFree:          301428 kB\nMemAvailable:    3007612 kB\nBuffers:            3484 kB\n";
+        assert_eq!(meminfo_total(phone), Some(7_810_772 * 1024));
+        // The line need not come first, and spacing varies.
+        assert_eq!(meminfo_total("MemFree: 1 kB\nMemTotal:2048 kB"), Some(2048 * 1024));
+        assert_eq!(meminfo_total("MemTotal:\t4096\n"), Some(4096 * 1024));
+        for bad in
+            ["", "MemFree: 1024 kB\n", "MemTotal: kB\n", "MemTotal: -5 kB\n", "MemTotal: 0 kB\n", "MemTotal: 12 MB\n", "MemTotal: 99999999999999999999 kB\n"]
+        {
+            assert_eq!(meminfo_total(bad), None, "{bad:?}");
+        }
+        assert_eq!(meminfo_total(&format!("MemTotal: {} kB\n", u64::MAX / 1024 + 1)), None, "overflow");
+    }
+
+    /// Linux and Android detect their RAM, so the budgets follow the device instead of 16 GB.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn linux_and_android_report_installed_ram() {
+        let ram = detect_physical_memory().unwrap_or(0);
+        assert!(ram >= 256 << 20, "{ram} bytes");
     }
 
     /// Windows used to report no RAM at all, so the budget assumed 16 GB on every machine.

@@ -761,36 +761,78 @@ mod fontconfig_tests {
     }
 }
 
+/// Android's system font directories: AOSP's fonts, then the product partition's (OEM
+/// additions). Apps get no `HOME` or XDG directories, so there are no per-user font folders.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const ANDROID_FONT_DIRS: [&str; 2] = ["/system/fonts", "/product/fonts"];
+
+/// The platform families whose font directories differ.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FontPlatform {
+    MacOs,
+    Windows,
+    Android,
+    /// Linux, the BSDs and other Unix-likes (XDG layout, Flatpak).
+    Unix,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl FontPlatform {
+    /// The platform of this build. Android is not `linux` in Rust and has no XDG layout.
+    pub(crate) const CURRENT: Self = if cfg!(target_os = "macos") {
+        Self::MacOs
+    } else if cfg!(target_os = "windows") {
+        Self::Windows
+    } else if cfg!(target_os = "android") {
+        Self::Android
+    } else {
+        Self::Unix
+    };
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn system_font_dirs() -> Vec<std::path::PathBuf> {
+    font_dirs(FontPlatform::CURRENT, |k| std::env::var_os(k))
+}
+
+/// The font directories of `platform`, most system-wide first, with environment variables read
+/// through `var`. Directories that don't exist are included; the scan skips them.
+#[cfg(not(target_arch = "wasm32"))]
+fn font_dirs(platform: FontPlatform, var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Vec<std::path::PathBuf> {
     use std::path::PathBuf;
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = var("HOME").map(PathBuf::from);
     let mut v = Vec::new();
-    if cfg!(target_os = "macos") {
-        v.push(PathBuf::from("/System/Library/Fonts"));
-        v.push(PathBuf::from("/Library/Fonts"));
-        if let Some(h) = &home {
-            v.push(h.join("Library/Fonts"));
+    match platform {
+        FontPlatform::MacOs => {
+            v.push(PathBuf::from("/System/Library/Fonts"));
+            v.push(PathBuf::from("/Library/Fonts"));
+            if let Some(h) = &home {
+                v.push(h.join("Library/Fonts"));
+            }
         }
-    } else if cfg!(target_os = "windows") {
-        let windir = std::env::var_os("WINDIR").map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
-        v.push(windir.join("Fonts"));
-        if let Some(l) = std::env::var_os("LOCALAPPDATA") {
-            v.push(PathBuf::from(l).join("Microsoft\\Windows\\Fonts"));
+        FontPlatform::Windows => {
+            let windir = var("WINDIR").map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
+            v.push(windir.join("Fonts"));
+            if let Some(l) = var("LOCALAPPDATA") {
+                v.push(PathBuf::from(l).join("Microsoft\\Windows\\Fonts"));
+            }
         }
-    } else {
-        v.push(PathBuf::from("/usr/share/fonts"));
-        v.push(PathBuf::from("/usr/local/share/fonts"));
-        // Inside a Flatpak sandbox the host's system and per-user fonts are mounted here
-        // (`/usr/share/fonts` is the runtime's own small set). Missing dirs are skipped.
-        v.push(PathBuf::from("/run/host/fonts"));
-        v.push(PathBuf::from("/run/host/user-fonts"));
-        if let Some(d) = std::env::var_os("XDG_DATA_HOME") {
-            v.push(PathBuf::from(d).join("fonts"));
-        }
-        if let Some(h) = &home {
-            v.push(h.join(".local/share/fonts"));
-            v.push(h.join(".fonts"));
+        FontPlatform::Android => v.extend(ANDROID_FONT_DIRS.map(PathBuf::from)),
+        FontPlatform::Unix => {
+            v.push(PathBuf::from("/usr/share/fonts"));
+            v.push(PathBuf::from("/usr/local/share/fonts"));
+            // Inside a Flatpak sandbox the host's system and per-user fonts are mounted here
+            // (`/usr/share/fonts` is the runtime's own small set). Missing dirs are skipped.
+            v.push(PathBuf::from("/run/host/fonts"));
+            v.push(PathBuf::from("/run/host/user-fonts"));
+            if let Some(d) = var("XDG_DATA_HOME") {
+                v.push(PathBuf::from(d).join("fonts"));
+            }
+            if let Some(h) = &home {
+                v.push(h.join(".local/share/fonts"));
+                v.push(h.join(".fonts"));
+            }
         }
     }
     v
@@ -834,6 +876,36 @@ mod tests {
         let dirs = super::system_font_dirs();
         assert!(dirs.iter().any(|d| d.ends_with("run/host/fonts")));
         assert!(dirs.iter().any(|d| d.ends_with("run/host/user-fonts")));
+    }
+
+    /// Android scans its system and product font folders, never the desktop Linux ones (it is not
+    /// `linux` in Rust, and used to fall through to them), even if `HOME` or XDG are set.
+    #[test]
+    fn android_scans_system_and_product_fonts() {
+        use super::{FontPlatform, font_dirs};
+        use std::path::PathBuf;
+        let env = |k: &str| match k {
+            "HOME" => Some("/data/user/0/app".into()),
+            "XDG_DATA_HOME" => Some("/data/xdg".into()),
+            _ => None,
+        };
+        let want = vec![PathBuf::from("/system/fonts"), PathBuf::from("/product/fonts")];
+        assert_eq!(font_dirs(FontPlatform::Android, env), want);
+        assert_eq!(font_dirs(FontPlatform::Android, |_| None), want);
+        // The other platforms keep their own folders and never probe Android's.
+        let unix = font_dirs(FontPlatform::Unix, env);
+        assert_eq!(unix.first(), Some(&PathBuf::from("/usr/share/fonts")));
+        assert!(unix.contains(&PathBuf::from("/data/xdg/fonts")) && unix.contains(&PathBuf::from("/data/user/0/app/.local/share/fonts")));
+        assert!(font_dirs(FontPlatform::MacOs, env).contains(&PathBuf::from("/data/user/0/app/Library/Fonts")));
+        assert_eq!(font_dirs(FontPlatform::Windows, |_| None), vec![PathBuf::from("C:\\Windows").join("Fonts")]);
+        for p in [FontPlatform::Unix, FontPlatform::MacOs, FontPlatform::Windows] {
+            assert!(font_dirs(p, env).iter().all(|d| !want.contains(d)), "{p:?}");
+        }
+        if cfg!(target_os = "android") {
+            assert_eq!(FontPlatform::CURRENT, FontPlatform::Android);
+        } else if cfg!(target_os = "linux") {
+            assert_eq!(FontPlatform::CURRENT, FontPlatform::Unix);
+        }
     }
 
     /// The bundled UI fonts cover Czech (the `cs` UI language) on their own: every letter with a
