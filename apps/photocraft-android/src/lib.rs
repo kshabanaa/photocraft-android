@@ -17,6 +17,11 @@ mod android {
     use photocraft_ui_egui::theme::ThemeKind;
     use winit::platform::android::activity::AndroidApp;
 
+    /// An independent build (D-01): Cargo.toml turns on `photocraft-ui-egui/unbranded` for Android,
+    /// so the ArtCraft marks stay out (docs/brand/LICENSE-brand.txt). Losing that fails the build.
+    const BRAND: photocraft_ui_egui::brand::Brand = photocraft_ui_egui::brand::Brand::BUILD;
+    const _: () = assert!(!BRAND.is_official(), "Android builds are independent: enable photocraft-ui-egui's `unbranded` feature");
+
     /// Called once by android-activity on its native thread after `GameActivity.onCreate`.
     // The export is the only reason for `unsafe` here: android-activity looks the symbol up by
     // name. The body is safe code.
@@ -145,7 +150,7 @@ mod android {
             };
             let key = [px[0], px[1], px[2], px[3], w, h];
             if self.logged != Some(key) {
-                log::info!("safe area: insets {:?} (left, top, right, bottom px) of a {w} x {h} window", &px);
+                log::info!("safe area: insets {:?} (left, top, right, bottom px) of a {w} x {h} window", px);
                 self.logged = Some(key);
                 ctx.request_repaint();
             }
@@ -193,7 +198,7 @@ mod android {
                 // field would come back, and the keyboard with it, over and over. The field still
                 // has focus, so the keyboard stays.
                 ctx.output_mut(|o| match &o.ime {
-                    Some(ime) => self.ime.output = Some(ime.clone()),
+                    Some(ime) => self.ime.output = Some(*ime),
                     None => o.ime.clone_from(&self.ime.output),
                 });
             }
@@ -398,6 +403,19 @@ mod tests {
         let m = modifiers_from_meta(0x1000 | 0x2000 | 0x1 | 0x40);
         assert!(m.ctrl && m.command && m.shift && !m.alt);
         assert!(modifiers_from_meta(0x2 | 0x10).alt);
+    }
+
+    /// The Android target gets `photocraft-ui-egui/unbranded` (`android::BRAND` asserts it, but only
+    /// an Android build compiles that, so desktop CI checks the manifest).
+    #[test]
+    fn android_builds_leave_out_the_artcraft_marks() {
+        let manifest: toml::Table = include_str!("../Cargo.toml").parse().unwrap();
+        let ui = &manifest["target"]["cfg(target_os = \"android\")"]["dependencies"]["photocraft-ui-egui"];
+        let features: Vec<_> = ui["features"].as_array().unwrap().iter().filter_map(toml::Value::as_str).collect();
+        assert!(features.contains(&"unbranded"), "{features:?}");
+        // Not in the target-independent dependencies: on a desktop host it would turn the marks off
+        // in the official desktop app too, whenever both are built together (`--workspace`).
+        assert!(manifest["dependencies"]["photocraft-ui-egui"].get("features").is_none());
     }
 
     #[test]

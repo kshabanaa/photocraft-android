@@ -154,8 +154,8 @@ fn wasm_set() -> Result<Vec<String>, String> {
 }
 
 /// Optional features that official builds enable and the web app ships, also checked for wasm32:
-/// (package, feature).
-const WASM_FEATURES: &[(&str, &str)] = &[("photocraft-codecs", "heif")];
+/// (package, feature). `unbranded` is for independent builds of a fork (`brand::Brand`).
+const WASM_FEATURES: &[(&str, &str)] = &[("photocraft-codecs", "heif"), ("photocraft-ui-egui", "unbranded")];
 
 fn cmd_wasm() -> Result<(), String> {
     let set = wasm_set()?;

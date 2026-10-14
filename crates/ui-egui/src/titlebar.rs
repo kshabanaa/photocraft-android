@@ -658,8 +658,9 @@ mod tests {
                 assert!(a.right() <= min.left(), "{a:?} runs into the caption buttons at {width}");
             }
             // Wide windows show the whole group; the narrowest drops Discord (also Help › Discord).
+            // Independent builds never show it (brand_tests.rs).
             let has_discord = texts(&out).iter().any(|(t, _)| t == "Discord");
-            assert_eq!(has_discord, width > 1000.0, "Discord at {width}");
+            assert_eq!(has_discord, width > 1000.0 && w.app.brand.is_official(), "Discord at {width}");
         }
     }
 
