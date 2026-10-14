@@ -1,0 +1,84 @@
+name: Android
+
+# "Never break Android" (NFR-MAINT-01, work package 1.15): every push and pull request to the
+# android branch must keep the Android app and every crate it depends on compiling for both
+# shipped ABIs. The QA APK, emulator smoke and policy jobs (docs/android/06 §5.1) come later.
+on:
+  push:
+    branches: [android]
+  pull_request:
+    branches: [android]
+
+permissions:
+  contents: read
+
+# A newer push to a PR branch cancels its older run; runs on android itself always finish.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # The NDK the Gradle project builds with (ndkVersion in packaging/android/app/build.gradle.kts).
+  # Moving it is a reviewed change: update the release name, revision and SHA-256 together (the
+  # SHA-1 Google publishes for the archive is in https://dl.google.com/android/repository/repository2-3.xml).
+  NDK_RELEASE: r29
+  NDK_REVISION: 29.0.14206865
+  NDK_SHA256: 4abbbcdc842f3d4879206e9695d52709603e52dd68d3c1fff04b3b5e7a308ecf
+  # minSdk in packaging/android/app/build.gradle.kts.
+  ANDROID_API: "29"
+  CARGO_NDK_VERSION: 4.1.2
+
+jobs:
+  check:
+    name: check (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64-linux-android
+          - abi: x86_64
+            target: x86_64-linux-android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust and the Android target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --target "${{ matrix.target }}"
+          rustup default stable
+          rustc --version
+
+      # Only android saves caches; PRs restore android's.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/android' }}
+          cache-on-failure: true
+
+      - name: Install cargo-ndk
+        run: |
+          cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+          cargo ndk --version
+
+      # A pinned NDK, verified by checksum, rather than whichever NDK the runner image ships.
+      # android-activity's build script compiles the GameActivity C/C++ glue with its clang.
+      - name: Install the Android NDK
+        run: |
+          zip="$RUNNER_TEMP/android-ndk-$NDK_RELEASE-linux.zip"
+          curl -sSfL --retry 3 -o "$zip" "https://dl.google.com/android/repository/android-ndk-$NDK_RELEASE-linux.zip"
+          echo "$NDK_SHA256  $zip" | sha256sum -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP"
+          rm "$zip"
+          ndk="$RUNNER_TEMP/android-ndk-$NDK_RELEASE"
+          grep -qx "Pkg.Revision = $NDK_REVISION" "$ndk/source.properties"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ndk" >> "$GITHUB_ENV"
+
+      # `--features heif`: release builds open HEIC photos (packaging/android/deploy.sh), so the
+      # gate checks the graph that ships. cargo-ndk runs `cargo check --target ${{ matrix.target }}`
+      # with the NDK's clang, sysroot and API level set for build scripts.
+      - name: cargo check (photocraft-android and its dependencies)
+        run: cargo ndk -t "${{ matrix.abi }}" -P "$ANDROID_API" check --locked -p photocraft-android --features heif
