@@ -960,6 +960,27 @@ pub fn fit_view(view: &mut View, doc: &Document, area: Vec2, ppp: f32, aspect: f
     view.fill_pending = false;
 }
 
+/// Android: a fit made while the soft keyboard covered most of the canvas (New Document's Enter
+/// creates the document before the keyboard goes down) left the document at a few percent. Until
+/// the user zooms or scrolls it, a fitted view fits again whenever its canvas area changes.
+fn refit_untouched(ctx: &egui::Context, view_key: (usize, bool), view: &mut View, doc: &Document, area: Vec2, ppp: f32, aspect: f32) {
+    let key = egui::Id::new(("touch-fit", view_key));
+    let Some((zoom, center, fitted)) = ctx.data(|d| d.get_temp::<(f32, [f32; 2], Vec2)>(key)) else { return };
+    if view.zoom != zoom || view.center != center {
+        ctx.data_mut(|d| d.remove::<(f32, [f32; 2], Vec2)>(key));
+        return;
+    }
+    if (fitted - area).length() > 4.0 && area.x > 50.0 && area.y > 50.0 {
+        fit_view(view, doc, area, ppp, aspect);
+        remember_fit(ctx, view_key, view, area);
+    }
+}
+
+/// See [`refit_untouched`].
+fn remember_fit(ctx: &egui::Context, view_key: (usize, bool), view: &View, area: Vec2) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("touch-fit", view_key)), (view.zoom, view.center, area)));
+}
+
 /// Centre the document and zoom until it fills the canvas. One axis can extend beyond the
 /// viewport, matching the Hand tool's Fill Screen action.
 pub fn fill_view(view: &mut View, doc: &Document, area: Vec2, ppp: f32, aspect: f32) {
@@ -2855,6 +2876,11 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     let aspect = app.ui.view.display_aspect();
     if view.fit_pending && rect.width() > 50.0 {
         fit_view(&mut view, &doc, rect.size(), ppp, aspect);
+        if cfg!(target_os = "android") {
+            remember_fit(&ctx, (idx, primary), &view, rect.size());
+        }
+    } else if cfg!(target_os = "android") {
+        refit_untouched(&ctx, (idx, primary), &mut view, &doc, rect.size(), ppp, aspect);
     }
     if view.fill_pending && rect.width() > 50.0 {
         fill_view(&mut view, &doc, rect.size(), ppp, aspect);

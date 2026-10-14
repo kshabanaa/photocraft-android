@@ -79,7 +79,7 @@ mod android {
                     .get("ro.build.version.sdk")
                     .and_then(|v| v.trim().parse().ok())
                     .unwrap_or(29);
-                Ok(Box::new(AndroidShell { app, android: shell_app, sdk, logged: None, scale_logged: None, deferred: Vec::new(), ime: Ime::default(), gestures: Default::default(), held: egui::Modifiers::NONE }))
+                Ok(Box::new(AndroidShell { app, android: shell_app, sdk, logged: None, scale_logged: None, deferred: Vec::new(), ime: Ime::default(), gestures: Default::default(), held: egui::Modifiers::NONE, settle_until: 0.0 }))
             }),
         );
         if let Err(e) = started {
@@ -109,6 +109,10 @@ mod android {
         gestures: crate::gesture::Gestures,
         /// The modifier keys held, as last told to egui (see `key_modifiers`).
         held: egui::Modifiers,
+        /// Until when (`RawInput::time`) to keep drawing after the soft keyboard closed: the
+        /// window grows back over several frames with no input to wake the loop, and the screen
+        /// otherwise stayed half drawn until the next touch.
+        settle_until: f64,
     }
 
     /// The soft keyboard's text buffer as last seen, while a text field has focus, and whether
@@ -333,9 +337,14 @@ mod android {
                     *force = None;
                 }
             }
+            let was_editing = self.ime.active;
             raw_input.events.extend(self.ime_events(ctx));
-            if self.ime.active {
-                // Keyboard text arrives without a winit event to wake the loop.
+            if was_editing && !self.ime.active {
+                self.settle_until = now + 1.5;
+            }
+            if self.ime.active || now < self.settle_until {
+                // Keyboard text, and the window resizing as the keyboard slides, arrive without a
+                // winit event to wake the loop.
                 ctx.request_repaint_after(std::time::Duration::from_millis(50));
             }
         }
