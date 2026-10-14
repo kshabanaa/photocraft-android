@@ -389,14 +389,11 @@ pub fn font_files(script: CjkScript) -> Vec<FontFile> {
             TraditionalChinese => vec![w("msjh.ttc", "Microsoft JhengHei"), w("msjh.ttf", ""), w("mingliu.ttc", "")],
             Korean => vec![w("malgun.ttf", ""), w("gulim.ttc", "")],
         }
+    } else if cfg!(target_os = "android") {
+        android_font_files(script)
     } else {
         // One Noto Sans CJK collection covers all four scripts; the face picks the glyph forms.
-        let noto = match script {
-            Japanese => "Noto Sans CJK JP",
-            SimplifiedChinese => "Noto Sans CJK SC",
-            TraditionalChinese => "Noto Sans CJK TC",
-            Korean => "Noto Sans CJK KR",
-        };
+        let noto = noto_sans_cjk(script);
         let mut v: Vec<FontFile> = [
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             // FreeBSD ports (x11-fonts/noto-sans-cjk and friends) install under /usr/local.
@@ -442,6 +439,29 @@ pub fn font_files(script: CjkScript) -> Vec<FontFile> {
     }
 }
 
+/// The Noto Sans CJK family with `script`'s glyph forms: one face of the Noto Sans CJK
+/// collections that Linux distributions and Android ship.
+#[cfg(not(target_arch = "wasm32"))]
+fn noto_sans_cjk(script: CjkScript) -> &'static str {
+    match script {
+        CjkScript::Japanese => "Noto Sans CJK JP",
+        CjkScript::SimplifiedChinese => "Noto Sans CJK SC",
+        CjkScript::TraditionalChinese => "Noto Sans CJK TC",
+        CjkScript::Korean => "Noto Sans CJK KR",
+    }
+}
+
+/// Android's CJK fonts for `script`: the Noto Sans CJK collection AOSP ships as
+/// `NotoSansCJK-Regular.ttc` (a face per script, picked by family name since its face order is
+/// not guaranteed), in the system font folder, then in the product partition's.
+#[cfg(not(target_arch = "wasm32"))]
+fn android_font_files(script: CjkScript) -> Vec<FontFile> {
+    crate::fonts::ANDROID_FONT_DIRS
+        .iter()
+        .map(|dir| FontFile { path: std::path::Path::new(dir).join("NotoSansCJK-Regular.ttc"), family: noto_sans_cjk(script).to_string() })
+        .collect()
+}
+
 /// Flatpak mounts the host system font directory outside the runtime's `/usr/share/fonts`.
 /// Preserve the collection face and font preference order when trying that mirror.
 #[cfg(not(target_arch = "wasm32"))]
@@ -472,12 +492,25 @@ pub fn last_resort_files() -> Vec<FontFile> {
     } else if cfg!(target_os = "windows") {
         let dir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
         vec![FontFile { path: std::path::Path::new(&dir).join("Fonts").join("ARIALUNI.TTF"), family: String::new() }]
+    } else if cfg!(target_os = "android") {
+        android_last_resort_files()
     } else {
         with_flatpak_host_fonts(vec![
             f("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"),
             f("/usr/share/fonts/google-droid-sans-fonts/DroidSansFallbackFull.ttf"),
         ])
     }
+}
+
+/// Android's broad-coverage fallback: Droid Sans Fallback, which AOSP replaced with Noto Sans CJK
+/// but some OEM and small-footprint builds still ship.
+#[cfg(not(target_arch = "wasm32"))]
+fn android_last_resort_files() -> Vec<FontFile> {
+    let [system, _product] = crate::fonts::ANDROID_FONT_DIRS;
+    ["DroidSansFallback.ttf", "DroidSansFallbackFull.ttf"]
+        .iter()
+        .map(|file| FontFile { path: std::path::Path::new(system).join(file), family: String::new() })
+        .collect()
 }
 
 /// macOS ships PingFang as a pre-installed "mobile asset" outside `/System/Library/Fonts`
@@ -652,6 +685,43 @@ mod tests {
             let Some(file) = fontconfig_match(script) else { continue };
             let bytes = std::fs::read(&file.path).expect("Fontconfig match remains readable");
             assert!(fontconfig_font_covers_sample(&bytes, &file.family, script), "{script:?}: {}", file.path.display());
+        }
+    }
+
+    /// Android tries the face of its Noto Sans CJK collection with the script's glyph forms (by
+    /// family, which the Type tool's fallback list also names), only in Android's font folders.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn android_uses_the_noto_sans_cjk_collection_face_per_script() {
+        let mut faces = Vec::new();
+        for script in [Japanese, SimplifiedChinese, TraditionalChinese, Korean] {
+            let files = android_font_files(script);
+            assert_eq!(files.first().map(|f| f.path.as_path()), Some(std::path::Path::new("/system/fonts/NotoSansCJK-Regular.ttc")), "{script:?}");
+            for f in &files {
+                assert!(crate::fonts::ANDROID_FONT_DIRS.iter().any(|d| f.path.starts_with(d)), "{script:?}: {}", f.path.display());
+                assert!(f.family.starts_with("Noto Sans CJK") && families(script).contains(&f.family.as_str()), "{script:?}: {}", f.family);
+            }
+            assert!(files.iter().any(|f| f.path == std::path::Path::new("/product/fonts/NotoSansCJK-Regular.ttc")));
+            faces.push(files[0].family.clone());
+        }
+        faces.dedup();
+        assert_eq!(faces.len(), 4, "one face per script: {faces:?}");
+        // The last resort is whole-file (no family) and in the system font folder too.
+        let last = android_last_resort_files();
+        assert!(!last.is_empty());
+        assert!(last.iter().all(|f| f.path.starts_with("/system/fonts") && f.family.is_empty()));
+        if cfg!(target_os = "android") {
+            assert_eq!(font_files(Japanese), android_font_files(Japanese));
+            assert_eq!(last_resort_files(), last);
+        }
+    }
+
+    /// Every Noto Sans CJK face the Linux and Android candidates pick is a Type tool fallback family.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn noto_sans_cjk_faces_are_listed_type_tool_families() {
+        for script in [Japanese, SimplifiedChinese, TraditionalChinese, Korean] {
+            assert!(families(script).contains(&noto_sans_cjk(script)), "{script:?}");
         }
     }
 
