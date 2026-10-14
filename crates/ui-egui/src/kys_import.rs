@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::PhotocraftApp;
+use crate::touch::FitScreen;
 pub use photocraft_engine::kys::{KysCommand, KysSet, MAX_BYTES, Plan, parse};
 
 /// Match the rows to our commands: the menus' items first, then engine commands the menus list
@@ -194,7 +195,7 @@ pub fn show_offer(app: &mut PhotocraftApp, ctx: &egui::Context) {
         .resizable(false)
         .default_width(440.0)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
+        .fit_screen(ctx).show(ctx, |ui| {
             ui.label(line);
             ui.label(tl!("Edit › Keyboard Shortcuts › Reset All to Defaults undoes an import."));
             ui.add_space(8.0);

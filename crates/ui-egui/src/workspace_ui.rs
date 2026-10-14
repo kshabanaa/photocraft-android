@@ -12,6 +12,7 @@ use serde_json::{Map, Value, json};
 
 use crate::PhotocraftApp;
 use crate::theme::Tokens;
+use crate::touch::FitScreen;
 
 /// A View › Pixel Aspect Ratio › Custom entry.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -368,7 +369,7 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let title = title(&kind);
     let names: Vec<String> = app.session.prefs().workspaces.keys().cloned().collect();
     let mut result: Option<bool> = None;
-    egui::Window::new(title).id(egui::Id::new("shell-dialog")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).show(
+    egui::Window::new(title).id(egui::Id::new("shell-dialog")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)).fit_screen(ctx).show(
         ctx,
         |ui| {
             ui.label(RichText::new(tl!(&title)).color(t.text).size(13.0).strong());

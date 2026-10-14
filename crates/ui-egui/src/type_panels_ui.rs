@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 use crate::PhotocraftApp;
 use crate::theme::Tokens;
+use crate::touch::FitScreen;
 
 /// View state of the type panels.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -150,7 +151,7 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
             .resizable(false)
             .frame(float_frame(&t))
             .default_pos(pos2((canvas.right() - 314.0).max(canvas.left() + 8.0), canvas.top() + 40.0))
-            .show(ctx, |ui| {
+            .fit_screen(ctx).show(ctx, |ui| {
                 ui.set_width(290.0);
                 ui.horizontal(|ui| {
                     let mut tab = app.ui.type_panels.styles_tab;
@@ -185,7 +186,7 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
             .resizable(false)
             .frame(float_frame(&t))
             .default_pos(pos2((canvas.right() - 314.0 - 372.0).max(canvas.left() + 8.0), canvas.top() + 40.0))
-            .show(ctx, |ui| {
+            .fit_screen(ctx).show(ctx, |ui| {
                 ui.set_width(340.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(tl!("Glyphs")).color(t.text).size(12.0).strong());
@@ -766,7 +767,7 @@ fn spelling_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
         .frame(float_frame(&t).inner_margin(egui::Margin::same(14)))
         .title_bar(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, -40.0))
-        .show(ctx, |ui| {
+        .fit_screen(ctx).show(ctx, |ui| {
             ui.set_width(380.0);
             ui.label(RichText::new(tl!("Check Spelling")).color(t.text).size(13.0).strong());
             ui.add_space(6.0);

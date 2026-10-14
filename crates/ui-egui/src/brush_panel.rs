@@ -23,6 +23,7 @@ use serde_json::{Map, Value, json};
 use crate::brush_preview;
 use crate::theme::{self, Tokens};
 use crate::{PhotocraftApp, icons, widgets};
+use crate::touch::FitScreen;
 
 pub use crate::brush_preview::{preview_pixels, preview_sig};
 pub use crate::brush_sections::section_body;
@@ -354,15 +355,24 @@ fn settings_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         app.ui.brush_section = 0;
     }
     let section = app.ui.brush_section;
+    // The columns' height. A short screen (a phone in landscape) gives them what the tabs above
+    // and the preview strip below leave, so the strip and its buttons stay on screen; each column
+    // then scrolls on its own.
+    let short = crate::touch::short_screen(ui.ctx());
+    let column_h = if short { (ui.ctx().content_rect().height() - 235.0).clamp(140.0, 482.0) } else { 482.0 };
     ui.horizontal_top(|ui| {
-        section_list(app, ui, &mut b);
-        widgets::vline(ui, 482.0);
+        if short {
+            egui::ScrollArea::vertical().id_salt("brush-sections-list").max_height(column_h).show(ui, |ui| section_list(app, ui, &mut b));
+        } else {
+            section_list(app, ui, &mut b);
+        }
+        widgets::vline(ui, column_h);
         ui.vertical(|ui| {
             ui.set_width(WIDTH - 190.0);
             // No title above the options (#3477): the selected row in the list names them, as
             // in Photoshop, and the line is better spent on the options.
             let on = section_flag(&mut b, section).is_none_or(|f| *f);
-            egui::ScrollArea::vertical().id_salt(("brush-section", section)).max_height(450.0).auto_shrink([false, false]).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(("brush-section", section)).max_height(column_h - 32.0).auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_width(WIDTH - 204.0);
                 // A section that's off shows its options greyed out (Photoshop). A tip picked in
                 // the grid copies the tip fields only — the dynamics sections stay (Photoshop).
@@ -510,7 +520,7 @@ pub fn window(app: &mut PhotocraftApp, ctx: &egui::Context) {
         .resizable(false)
         .frame(frame)
         .default_pos(egui::pos2((canvas.right() - WIDTH - 30.0).max(canvas.left() + 8.0), canvas.top() + 24.0))
-        .show(ctx, |ui| {
+        .fit_screen(ctx).show(ctx, |ui| {
             ui.set_width(WIDTH);
             ui.horizontal(|ui| {
                 let mut tab = app.ui.brush_tab;

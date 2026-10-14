@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use crate::PhotocraftApp;
 use crate::state::Tool;
 use crate::theme::Tokens;
+use crate::touch::FitScreen;
 
 /// Panel state (serde, so the control channel can read and drive it).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -764,7 +765,7 @@ fn float_window(
         .resizable(false)
         .frame(frame)
         .default_pos(pos2((canvas.right() - width - 16.0 - offset).max(canvas.left() + 8.0), canvas.top() + 40.0))
-        .show(ctx, |ui| {
+        .fit_screen(ctx).show(ctx, |ui| {
             ui.set_width(width);
             // Photoshop-style tab header with a close box.
             ui.horizontal(|ui| {

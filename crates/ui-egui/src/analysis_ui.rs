@@ -17,6 +17,7 @@ use crate::PhotocraftApp;
 use crate::canvas::{ToolEvent, ViewXform};
 use crate::state::Tool;
 use crate::theme::Tokens;
+use crate::touch::FitScreen;
 
 /// What a pointer drag is doing (not serialised).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -659,7 +660,7 @@ pub(crate) fn panel_window(app: &PhotocraftApp, ctx: &egui::Context, id: &str, t
         .max_width(width)
         .frame(float_frame(&t))
         .default_pos(pos2((canvas.right() - width - 16.0 + offset.x).max(canvas.left() + 8.0), canvas.top() + offset.y))
-        .show(ctx, |ui| {
+        .fit_screen(ctx).show(ctx, |ui| {
             ui.set_width(width);
             ui.set_max_width(width);
             body(ui);
@@ -874,7 +875,7 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
         .resizable(false)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
         .frame(float_frame(&t))
-        .show(ctx, |ui| {
+        .fit_screen(ctx).show(ctx, |ui| {
             ui.label(RichText::new(tl!(&title)).color(t.text).size(13.0).strong());
             crate::widgets::hairline(ui);
             ui.add_space(6.0);

@@ -26,6 +26,7 @@ use crate::canvas::{ToolEvent, ViewXform};
 use crate::state::Tool;
 use crate::theme::Tokens;
 use crate::widgets;
+use crate::touch::FitScreen;
 
 #[cfg(test)]
 mod editor_tests;
@@ -622,7 +623,7 @@ pub fn editor_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(true)
         .default_width(330.0)
-        .show(ctx, |ui| match &layer {
+        .fit_screen(ctx).show(ctx, |ui| match &layer {
             Some(l) => properties_panel::editor(app, ui, l),
             None => {
                 // Photoshop's editor edits the gradient the tool paints with, so with no gradient

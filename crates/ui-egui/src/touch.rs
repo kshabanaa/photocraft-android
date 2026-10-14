@@ -3,6 +3,26 @@
 //! or dialog around it. A touch shell (the Android app) reads [`pads`] when it tells a swipe from
 //! a drag; on desktop and the web nothing reads it.
 
+/// Whether the window is a short screen (a phone in landscape), under
+/// [`crate::prefs_ui::SHORT_HEIGHT`] points of usable height.
+pub fn short_screen(ctx: &egui::Context) -> bool {
+    ctx.content_rect().height() < crate::prefs_ui::SHORT_HEIGHT
+}
+
+/// Floating panels (Brush Settings, Glyphs, the Gradient Editor, ...) that fit a short screen.
+pub trait FitScreen {
+    /// On a short screen, a window taller than the screen scrolls as a whole instead of running off
+    /// its bottom edge (egui keeps a window's position on screen, not its content). Elsewhere it is
+    /// unchanged.
+    fn fit_screen(self, ctx: &egui::Context) -> Self;
+}
+
+impl FitScreen for egui::Window<'_> {
+    fn fit_screen(self, ctx: &egui::Context) -> Self {
+        if short_screen(ctx) { self.vscroll(true).max_height(ctx.content_rect().height()) } else { self }
+    }
+}
+
 #[derive(Clone, Default)]
 struct Pads {
     /// The frame (`Context::cumulative_frame_nr`) the rectangles were drawn in.
