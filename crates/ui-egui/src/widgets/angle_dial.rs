@@ -16,6 +16,7 @@ pub fn angle_dial_row(ui: &mut Ui, label: &str, angle: &mut f32, range: std::ops
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(tl!(label)).color(t.text_dim));
         let (rect, mut dial) = ui.allocate_exact_size(vec2(42.0, 42.0), Sense::click_and_drag());
+        crate::touch::pad(ui.ctx(), rect);
         dial.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, ui.is_enabled(), tl!(label)));
         if (dial.clicked() || dial.dragged())
             && let Some(pos) = dial.interact_pointer_pos()

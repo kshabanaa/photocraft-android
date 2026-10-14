@@ -396,6 +396,17 @@ pub fn reveal(app: &mut PhotocraftApp, g: Group) {
 /// toggle visibility, so one stray click made a panel vanish: #129); `docked` is false for
 /// Studio's floating Properties card, which the rail shows and hides.
 pub fn rail_click(app: &mut PhotocraftApp, g: Group, docked: bool) {
+    // A window too narrow for the dock (`prefs_ui::sync_narrow_dock`): the rail opens the hidden
+    // dock on the group asked for, and that group's icon closes it again.
+    if app.ui.narrow_dock.is_some() {
+        if app.ui.panels.dock && g.shown(&app.ui.panels) && !app.ui.dock.is_collapsed(g) {
+            app.ui.panels.dock = false;
+        } else {
+            app.ui.panels.dock = true;
+            reveal(app, g);
+        }
+        return;
+    }
     if !g.shown(&app.ui.panels) {
         reveal(app, g);
     } else if !docked {

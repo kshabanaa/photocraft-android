@@ -1662,11 +1662,14 @@ pub fn status_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 // ----------------------------------------------------------------------------- dock
 
 pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    // A window too narrow for the dock keeps just the icon rail, which opens the dock on demand
+    // (`prefs_ui::sync_narrow_dock`, `dock::rail_click`).
+    let show_dock = app.ui.panels.dock;
     // Even legacy destinations must discard gestures captured by an earlier workspace.
-    let customized = crate::panel_docking::show(app, ui);
+    let customized = if show_dock { crate::panel_docking::show(app, ui) } else { app.ui.docking.is_some() };
     let t = Tokens::get(ui.ctx());
     let p = app.ui.panels.clone();
-    if t.pro && !customized {
+    if t.pro && !customized && show_dock {
         dock_panels(app, ui, &p, &t);
     }
     // Narrow icon rail, unless an embedding app hides it: shows, expands or collapses panel groups.
@@ -1704,7 +1707,7 @@ pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 }
             });
     }
-    if !t.pro && !customized {
+    if !t.pro && !customized && show_dock {
         dock_panels(app, ui, &p, &t);
     }
     crate::dock::persist(app, ui.ctx());
@@ -2322,12 +2325,21 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     let footer = widgets::footer_height(ui) + ui.spacing().item_spacing.y;
     let fill = ui.available_height() > footer + 60.0;
-    let rows_h = if fill { ui.available_height() - footer } else { f32::INFINITY };
+    // A short screen (a phone in landscape) can leave Layers less room than that: the rows then
+    // scroll above the footer instead of pushing it out of the panel.
+    let short = !fill && ctx.content_rect().height() < crate::prefs_ui::SHORT_HEIGHT;
+    let rows_h = if fill {
+        ui.available_height() - footer
+    } else if short {
+        (ui.available_height() - footer).max(24.0)
+    } else {
+        f32::INFINITY
+    };
     egui::ScrollArea::vertical()
         .id_salt("layer-rows")
         .max_height(rows_h)
-        .min_scrolled_height(if fill { rows_h } else { 0.0 })
-        .auto_shrink([false, !fill])
+        .min_scrolled_height(if fill || short { rows_h } else { 0.0 })
+        .auto_shrink([false, !(fill || short)])
         .show(ui, |ui| {
             // The drag keys are set only by actual layer-row and fx drags, not clicks or
             // ordinary scrolling. The ScrollArea applies this to its own content.
@@ -3557,6 +3569,7 @@ fn color_field(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         // SV field.
         let field_w = w - 38.0 - strip_w - 16.0;
         let (field, fresp) = ui.allocate_exact_size(vec2(field_w, h), Sense::click_and_drag());
+        crate::touch::pad(ui.ctx(), field);
         let mut mesh = egui::Mesh::default();
         let n = 16;
         for j in 0..=n {

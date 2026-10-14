@@ -504,6 +504,7 @@ fn color_field(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     let (fx, fy, fz) = locate(&mode, hsv, rgb, lab);
     // Colour field.
     let (field, resp) = ui.allocate_exact_size(vec2(FIELD, FIELD), Sense::click_and_drag());
+    crate::touch::pad(ui.ctx(), field);
     let web_only = f.get("__webOnly").and_then(Value::as_bool).unwrap_or(false);
     // Only Web Colors bands the field to the 216 web-safe colours, as in Photoshop (#4107).
     let mesh = |rect: Rect, color: &dyn Fn(f32, f32) -> [f32; 3]| {

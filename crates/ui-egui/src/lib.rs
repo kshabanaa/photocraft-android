@@ -209,6 +209,7 @@ pub mod tool_feedback;
 pub(crate) mod tool_memory;
 mod tool_reset;
 mod tool_shortcuts;
+pub mod touch;
 pub mod transform_fx;
 pub mod transform_tex;
 pub mod transform_tool;
@@ -1824,7 +1825,7 @@ impl eframe::App for PhotocraftApp {
         if chrome && self.ui.panels.toolbar {
             panels::toolbar(self, ui);
         }
-        if chrome && self.ui.panels.dock {
+        if chrome && (self.ui.panels.dock || self.ui.narrow_dock.is_some()) {
             panels::right_dock(self, ui);
         }
         let t = theme::Tokens::get(&ctx);

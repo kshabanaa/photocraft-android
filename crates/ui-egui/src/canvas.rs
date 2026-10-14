@@ -2631,7 +2631,10 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // File › Open Recent, newest first (on the web there are no paths to reopen).
     let recent: Vec<String> = if cfg!(target_arch = "wasm32") { Vec::new() } else { app.ui.recent_files.iter().take(HOME_RECENT).cloned().collect() };
     let recent_h = if recent.is_empty() { 0.0 } else { 34.0 + recent.len() as f32 * HOME_RECENT_ROW };
-    let card = Rect::from_center_size(area.center(), egui::vec2(460.0, 330.0 + recent_h));
+    // 460 points, narrower when the canvas is (a phone in portrait): never wider than the canvas,
+    // which clipped the card's left half.
+    let card = Rect::from_center_size(area.center(), egui::vec2(460.0_f32.min(area.width() - 16.0).max(240.0), 330.0 + recent_h));
+    let button_w = ((card.width() - 12.0) / 2.0).min(190.0);
     let new_label = crate::shortcuts::command_label(app, "New document…", "file.new");
     let open_label = crate::shortcuts::command_label(app, "Open…", "file.open");
     ui.scope_builder(egui::UiBuilder::new().max_rect(card), |ui| {
@@ -2650,13 +2653,13 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new(tl!("Create a new document or open an existing file.")).color(t.text_dim).size(14.0));
             ui.add_space(22.0);
             ui.horizontal(|ui| {
-                ui.add_space(((card.width() - 2.0 * 190.0 - 12.0) / 2.0).max(0.0));
+                ui.add_space(((card.width() - 2.0 * button_w - 12.0) / 2.0).max(0.0));
                 ui.spacing_mut().item_spacing.x = 12.0;
-                if crate::widgets::primary_button(ui, &new_label, 190.0).clicked() {
+                if crate::widgets::primary_button(ui, &new_label, button_w).clicked() {
                     let fields = app.new_document_fields();
                     app.ui.open_dialog(crate::state::DialogKind::NewDocument, fields);
                 }
-                if crate::widgets::secondary_button(ui, &open_label, 190.0).clicked() {
+                if crate::widgets::secondary_button(ui, &open_label, button_w).clicked() {
                     let _ = app.open_dialog_file();
                 }
             });
