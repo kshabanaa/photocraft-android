@@ -27,7 +27,7 @@ pub mod artboard_ui;
 pub(crate) mod background_redraw;
 mod blend_keys;
 pub(crate) mod blend_preview;
-mod brand;
+pub mod brand;
 pub(crate) mod brush_cursor;
 pub mod brush_panel;
 pub mod brush_picker;
@@ -497,6 +497,8 @@ pub struct PhotocraftApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    /// Official or independent build: whether the ArtCraft marks show ([`brand::Brand::BUILD`]).
+    pub brand: brand::Brand,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
     /// canvas state is shared (`canvas::GPU_OUTPUT`).
     canvases: HashMap<(DocId, u32), canvas::CanvasCache>,
@@ -762,6 +764,7 @@ impl PhotocraftApp {
             session,
             ui: UiState::default(),
             services,
+            brand: brand::Brand::BUILD,
             canvases: HashMap::new(),
             navigator_textures: HashMap::new(),
             display_memo: HashMap::new(),
@@ -2462,6 +2465,9 @@ mod color_swatch_tests;
 
 #[cfg(test)]
 mod profile_prompt_tests;
+
+#[cfg(test)]
+mod brand_tests;
 
 #[cfg(test)]
 mod input_tests;

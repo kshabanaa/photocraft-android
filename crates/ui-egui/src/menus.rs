@@ -190,8 +190,8 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         return result;
     }
     // Help › Discord, website, GitHub, Report an Issue.
-    if let Some(url) = crate::links::url_for(id) {
-        return Ok(crate::links::open(app, ctx, url));
+    if let Some(result) = crate::links::run(app, ctx, id) {
+        return result;
     }
     if id == "view.proofSetup.custom" {
         return Ok(json!({"dialog": crate::filter_dialog::open(app, "view.proofSetup")}));
@@ -748,7 +748,7 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         "file.open" | "file.exit" | "file.clearRecent" | "file.removeRecent" | "help.about" | "help.systemInfo" | "edit.search" => true,
         i if i.starts_with("file.openRecent.") => true,
         i if i.starts_with(DOCUMENT_ITEM) => true,
-        i if crate::links::url_for(i).is_some() => true,
+        i if crate::links::url_for(i).is_some() => crate::links::offers(app.brand, i),
         i if i.starts_with("window.theme.") => true,
         "file.save" | "file.saveAs" | "file.export.exportAs" | "file.export.quickExportAsPng" => {
             app.session.active().is_some() && app.services.export.is_some()
@@ -975,7 +975,8 @@ pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
         .collect();
     // 2) Our commands that Photoshop's tree doesn't list (or lists under another id).
     let mut extra: Vec<MenuItem> = Vec::new();
-    for &(id, label, path, sc) in UI_COMMANDS {
+    // Independent builds leave out the links to ArtCraft.
+    for &(id, label, path, sc) in UI_COMMANDS.iter().filter(|c| crate::links::offers(app.brand, c.0)) {
         extra.push(MenuItem {
             id: id.into(),
             label: label.into(),

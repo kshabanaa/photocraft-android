@@ -31,9 +31,17 @@ egui = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
+# An independent build (D-01, docs/android/11-ai-delivery-plan.md §10): no ArtCraft marks
+# (docs/brand/LICENSE-brand.txt). Set for the Android target only, so a desktop `cargo build
+# --workspace` doesn't unify it into the official desktop app. `android::BRAND` checks it.
+photocraft-ui-egui = { workspace = true, features = ["unbranded"] }
 eframe = { workspace = true, features = ["wgpu", "android-game-activity"] }
 winit = { version = "=0.30.13", default-features = false, features = ["android-game-activity"] }
 android_logger = "0.15"
 # Already in Cargo.lock (iana-time-zone); reads system properties for the GPU plan.
 android_system_properties = "=0.1.6"
 jni = "=0.22.4"
+
+[dev-dependencies]
+# Reading this crate's manifest in a host test (already in Cargo.lock through photocraft-ui-egui's build).
+toml = "1"

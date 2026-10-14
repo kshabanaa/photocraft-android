@@ -612,7 +612,7 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 if !system {
                     let side = if t.pro { 18.0 } else { 20.0 };
                     let (mark, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
-                    crate::brand::paint_mark(ui, mark);
+                    crate::brand::paint_mark(ui, mark, app.brand);
                     ui.add_space(6.0);
                 }
                 // With the macOS menu bar the menus are at the top of the screen instead. Either way
@@ -681,8 +681,9 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         button.context_menu(|ui| crate::prefs_ui::appearance_context_menu(app, ui));
                     }
                     // The community Discord, one click away while the bar has room for it
-                    // (narrow windows drop it first; it is also Help › Discord).
-                    if ui.available_width() >= DISCORD_ROOM {
+                    // (narrow windows drop it first; it is also Help › Discord). Independent
+                    // builds leave it out with the other ArtCraft links.
+                    if app.brand.is_official() && ui.available_width() >= DISCORD_ROOM {
                         let discord = egui::Button::image_and_text(
                             icons::image("message-square", 14.0, t.text_dim),
                             egui::RichText::new(tl!("Discord")).color(t.text_dim).size(12.0),

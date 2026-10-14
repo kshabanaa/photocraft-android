@@ -3303,6 +3303,7 @@ cameraRaw	Yellow	Sárga
 	Invalid {mode} profile	Érvénytelen profil ({mode})
 	Its layers don't fit the GPU memory budget. Raising Memory usage in Preferences › Performance raises the budget, up to a quarter of this computer's memory.	A dokumentum rétegei nem férnek el a GPU memóriakeretében. Ha a Beállítások › Teljesítmény alatt növeled a memóriahasználatot, a keret is nő, legfeljebb a számítógép memóriájának negyedéig.
 	Join us on Discord	Csatlakozz hozzánk a Discordon
+	An independent build, based on PhotoCraft by the ArtCraft team.	Független kiadás, amely az ArtCraft csapat PhotoCraft programján alapul.
 	Keep Using CPU	Marad a CPU
 	Kernel	Szűrőmag
 	Keyboard	Billentyűzet
