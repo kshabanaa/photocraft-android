@@ -498,8 +498,8 @@ pub fn body(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<Strin
     let t = Tokens::get(ui.ctx());
     let cat = get_s(f, "__category", "Recent");
     let mut create = false;
-    // Category tabs.
-    ui.horizontal(|ui| {
+    // Category tabs; they wrap on a narrow screen.
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 18.0;
         for name in CATEGORIES.iter().map(|c| c.0).chain(["Saved"]) {
             let on = cat == name;
@@ -531,10 +531,13 @@ pub fn body(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<Strin
         })
         .collect();
     let chosen = get_s(f, "__preset", "");
-    ui.horizontal_top(|ui| {
-        // Left: preset grid.
+    // Presets beside the details; stacked when the dialog is narrower than both (a phone).
+    let stacked = ui.available_width() < 790.0;
+    let layout = if stacked { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
+    ui.with_layout(layout, |ui| {
+        // Left (top when stacked): preset grid.
         ui.vertical(|ui| {
-            ui.set_width(520.0);
+            ui.set_width(520.0_f32.min(ui.available_width()));
             if cat == "Saved" {
                 create |= saved_presets(app, ui, f);
                 return;
@@ -543,8 +546,10 @@ pub fn body(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<Strin
             ui.add_space(6.0);
             let card = vec2(164.0, 112.0);
             // Up to 20 recent documents: scroll past three rows rather than grow the dialog.
+            // Three cards a row, fewer when the grid is narrower.
+            let per_row = (((ui.available_width() + 8.0) / (card.x + 8.0)).floor() as usize).clamp(1, 3);
             egui::ScrollArea::vertical().id_salt("new-document-presets").max_height(3.0 * (card.y + 8.0)).show(ui, |ui| {
-                for row in presets.chunks(3) {
+                for row in presets.chunks(per_row) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         for c in row {

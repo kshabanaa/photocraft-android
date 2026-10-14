@@ -374,8 +374,100 @@ fn display_scale(pref: prefs::UiScale, native: Option<f32>) -> f32 {
 fn sync_display_scale(app: &PhotocraftApp, ctx: &egui::Context) {
     let native = ctx.native_pixels_per_point();
     let native_scale = native.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(1.0);
-    let scale = display_scale(app.session.prefs().interface.ui_scale, native);
+    let pref = app.session.prefs().interface.ui_scale;
+    let mut scale = display_scale(pref, native);
+    // Android: Auto fits the desktop layout to small screens instead of taking the display
+    // density as is (a 6.7" 1080p phone at 2.8x left 853 x 384 points, so panels and dialogs
+    // ran off the screen). Tablets keep their own scale: it already leaves enough room.
+    if cfg!(target_os = "android") && matches!(pref, prefs::UiScale::Auto) {
+        // A new zoom applies from the next pass, while that frame's screen size was still
+        // measured at the old one: measured then, the window looked smaller each time and the UI
+        // shrank frame after frame. So measure only on a first pass, and let a change settle for
+        // a few frames before measuring again.
+        let settle = egui::Id::new("android-fit-scale-changed");
+        let frame = ctx.cumulative_frame_nr();
+        if ctx.current_pass_index() != 0 || ctx.data(|d| d.get_temp::<u64>(settle)).is_some_and(|f| frame < f.saturating_add(3)) {
+            return;
+        }
+        let physical = ctx.input(|i| i.viewport_rect().size()) * ctx.pixels_per_point();
+        scale = fit_scale(native_scale, physical);
+        if (scale / native_scale - ctx.zoom_factor()).abs() < 1e-3 {
+            return;
+        }
+        ctx.data_mut(|d| d.insert_temp(settle, frame));
+    }
     ctx.set_zoom_factor(scale / native_scale);
+}
+
+/// A window narrower than [`NARROW_WIDTH`] points (a phone in portrait, a narrow split screen)
+/// can't fit the dock beside the canvas: the dock hides itself there, as ⇧Tab would, and comes
+/// back as it was when the window is wide again. The icon rail opens it on demand
+/// (`dock::rail_click`).
+fn sync_narrow_dock(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    let narrow = ctx.content_rect().width() < NARROW_WIDTH;
+    match (narrow, app.ui.narrow_dock) {
+        (true, None) => {
+            app.ui.narrow_dock = Some(app.ui.panels.dock);
+            app.ui.panels.dock = false;
+        }
+        (false, Some(was)) => {
+            app.ui.panels.dock = was;
+            app.ui.narrow_dock = None;
+        }
+        _ => {}
+    }
+}
+
+/// Below this content width (points) the dock gives the canvas the room ([`sync_narrow_dock`]).
+pub const NARROW_WIDTH: f32 = 760.0;
+
+/// A window shorter than [`SHORT_HEIGHT`] points (a phone in landscape) fits one toolbar column of
+/// about six tools and leaves Layers a sliver of the dock. The first time the app sees one, the
+/// toolbar starts with two columns and the Properties group collapsed to its tabs, once per run,
+/// so the user's own choices afterwards stay.
+fn sync_short_screen(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    if app.ui.short_screen_applied || ctx.content_rect().height() >= SHORT_HEIGHT {
+        return;
+    }
+    app.ui.short_screen_applied = true;
+    app.ui.panels.toolbar_double = true;
+    app.ui.dock.set_collapsed(crate::dock::Group::Properties, true);
+}
+
+/// See [`sync_short_screen`].
+pub const SHORT_HEIGHT: f32 = 600.0;
+
+/// The scale (pixels per point) that keeps at least [`FIT_POINTS`] for the desktop layout on a
+/// window of `physical` pixels: the display's own scale when that already fits, never below 1.
+pub fn fit_scale(native: f32, physical: egui::Vec2) -> f32 {
+    let (short, long) = (physical.x.min(physical.y), physical.x.max(physical.y));
+    if !(native.is_finite() && native > 0.0 && short.is_finite() && short > 0.0) {
+        return native.max(1.0);
+    }
+    native.min(short / FIT_POINTS.y).min(long / FIT_POINTS.x).max(1.0)
+}
+
+/// The smallest window, in points, the desktop layout is laid out for on small screens (long and
+/// short side): a little above the desktop app's 760 x 480 minimum window.
+pub const FIT_POINTS: egui::Vec2 = egui::vec2(900.0, 520.0);
+
+#[cfg(test)]
+mod fit_scale_tests {
+    use super::fit_scale;
+
+    #[test]
+    fn phones_shrink_to_fit_and_tablets_keep_their_scale() {
+        // 6.7" phone, 1080 x 2400 at 2.8125: shrinks so the short side holds 520 points.
+        let phone = fit_scale(2.8125, egui::vec2(2400.0, 1080.0));
+        assert!((phone - 1080.0 / 520.0).abs() < 1e-4, "{phone}");
+        assert_eq!(fit_scale(2.8125, egui::vec2(1080.0, 2400.0)), phone, "portrait fits the same");
+        // 11" tablet, 2560 x 1600 at 2.0: already fits, unchanged.
+        assert_eq!(fit_scale(2.0, egui::vec2(2560.0, 1600.0)), 2.0);
+        // Never below 1, and nonsense input keeps the display's scale.
+        assert_eq!(fit_scale(1.5, egui::vec2(400.0, 300.0)), 1.0);
+        assert_eq!(fit_scale(2.0, egui::vec2(0.0, 0.0)), 2.0);
+        assert_eq!(fit_scale(f32::NAN, egui::vec2(100.0, 100.0)), 1.0);
+    }
 }
 
 /// Interface › Show Tooltips and Tools › Show Tooltips (either one off hides them): egui never
@@ -423,6 +515,10 @@ pub fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
     recovery(app);
     sync_rulers(app);
     sync_display_scale(app, ctx);
+    sync_narrow_dock(app, ctx);
+    if cfg!(target_os = "android") {
+        sync_short_screen(app, ctx);
+    }
     sync_appearance(app, ctx);
     crate::theme::set_ui_font_size(ctx, app.session.prefs().interface.ui_font_size);
     presets_store(app);
@@ -1149,9 +1245,14 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>, system: Option<egui
         section = (*first).to_string();
     }
     ui.add_space(6.0);
+    let screen_height = ui.ctx().content_rect().height();
+    // A short screen (a phone in landscape) gives the settings what the title, search field and
+    // buttons leave, and scrolls the section list beside them.
+    let short = screen_height < SHORT_HEIGHT;
+    let content_height = if short { (screen_height - 150.0).max(160.0) } else { (screen_height - 240.0).clamp(240.0, 680.0) };
     ui.horizontal_top(|ui| {
         // Section list.
-        ui.vertical(|ui| {
+        let list = |ui: &mut egui::Ui| {
             ui.set_width(170.0);
             if found.is_empty() {
                 ui.label(RichText::new(tl!("No matching settings")).color(t.text_dim));
@@ -1184,8 +1285,12 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>, system: Option<egui
                     section = id.to_string();
                 }
             }
-        });
-        let content_height = (ui.ctx().content_rect().height() - 240.0).clamp(240.0, 680.0);
+        };
+        if short {
+            egui::ScrollArea::vertical().max_height(content_height).id_salt("prefs-sections").show(ui, |ui| ui.vertical(list));
+        } else {
+            ui.vertical(list);
+        }
         crate::widgets::vline(ui, content_height);
         ui.vertical(|ui| {
             ui.set_width((ui.available_width() - 12.0).max(340.0));

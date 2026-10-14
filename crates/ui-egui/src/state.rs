@@ -1193,6 +1193,13 @@ pub struct UiState {
     /// Invalidates in-flight gestures when a workspace is replaced.
     #[serde(skip)]
     pub docking_generation: u64,
+    /// Set while the window is too narrow for the dock (`prefs_ui::sync_narrow_dock`): whether
+    /// the dock was shown before, restored when the window is wide again.
+    #[serde(skip)]
+    pub narrow_dock: Option<bool>,
+    /// The short-screen layout (`prefs_ui::sync_short_screen`) was applied in this run.
+    #[serde(skip)]
+    pub short_screen_applied: bool,
     /// Panels belonging to explicitly collapsed custom tab groups.
     #[serde(default)]
     pub docking_collapsed: Vec<String>,
@@ -1323,6 +1330,8 @@ impl Default for UiState {
             docking: None,
             docking_hidden: Default::default(),
             docking_generation: 0,
+            narrow_dock: None,
+            short_screen_applied: false,
             docking_collapsed: Vec::new(),
             docking_reveal: None,
             color_panel: Default::default(),

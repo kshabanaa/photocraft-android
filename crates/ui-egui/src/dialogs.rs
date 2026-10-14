@@ -125,10 +125,57 @@ fn show_modal<T>(
                 .min_size(egui::vec2(560.0, 400.0))
                 .max_size(max)
                 .show(ui, contents)
+        } else if cfg!(target_os = "android") {
+            // Phones: a dialog taller than the screen scrolls inside it, so every field and the
+            // OK / Cancel row stay reachable. Only vertically: a bounded width lets wide dialogs
+            // (New Document) wrap and stack their content to fit.
+            // The modal's area offers only last frame's size, so a dialog that shrank while the
+            // keyboard was up would stay short after it went down: the scroll area gets the whole
+            // room the screen has, and shrinks to its content.
+            let max = (ctx.content_rect().size() - egui::vec2(24.0, 24.0)).max(egui::vec2(200.0, 160.0));
+            ui.set_max_width(max.x);
+            let room = egui::Rect::from_min_size(ui.available_rect_before_wrap().min, max);
+            ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(id.with("fit"))
+                    .max_width(max.x)
+                    .max_height(max.y)
+                    .show(ui, |ui| {
+                        let shown = contents(ui);
+                        keep_focus_in_view(ui, id);
+                        shown
+                    })
+                    .inner
+            })
+            .inner
         } else {
             contents(ui)
         }
     })
+}
+
+/// Android: when the room a dialog has changes (the soft keyboard came up and took most of a
+/// landscape screen), scroll its focused text field back into sight. `ui` is the dialog's scroll
+/// content, after the dialog drew.
+fn keep_focus_in_view(ui: &mut egui::Ui, dialog: egui::Id) {
+    let ctx = ui.ctx().clone();
+    let key = dialog.with("room-height");
+    let height = ctx.content_rect().height();
+    let changed = ctx.data_mut(|d| {
+        let old = d.get_temp::<f32>(key);
+        d.insert_temp(key, height);
+        old.is_some_and(|old| (old - height).abs() > 1.0)
+    });
+    if !changed || !ctx.text_edit_focused() {
+        return;
+    }
+    let focused = ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).map(|r| r.rect);
+    if let Some(rect) = focused
+        && ui.min_rect().contains_rect(rect)
+        && !ui.clip_rect().contains_rect(rect)
+    {
+        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+    }
 }
 
 pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
@@ -196,7 +243,8 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 ui.set_min_width(w.min(460.0));
             }
             if d.kind == DialogKind::NewDocument {
-                ui.set_min_width(800.0);
+                // Presets beside the details; on a screen narrower than that they stack (new_doc_ui).
+                ui.set_min_width(800.0_f32.min(ctx.content_rect().width() - 48.0).max(300.0));
             }
             // The About window: room for the contributor table, the same width on every tab.
             let about_tabs = d.kind == DialogKind::About && d.fields.get("systemInfo").and_then(Value::as_bool) != Some(true);
