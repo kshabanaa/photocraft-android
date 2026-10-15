@@ -67,7 +67,8 @@ pub fn discord_button(app: &mut PhotocraftApp, ui: &mut egui::Ui, min_width: f32
 /// The links under the About text and under the start screen's buttons, `gap` apart. Official
 /// builds: the Discord button (`button_width` wide), then "PhotoCraft website · GitHub · ArtCraft".
 /// Independent builds: a plain-text credit, all the brand licence lets a modified version say about
-/// ArtCraft, then PhotoCraft's source.
+/// ArtCraft, then the build's maintainer ([`crate::brand::INDEPENDENT_MAINTAINER`]) and PhotoCraft's
+/// source.
 pub fn community(app: &mut PhotocraftApp, ui: &mut egui::Ui, button_width: f32, gap: f32) {
     if app.brand.is_official() {
         discord_button(app, ui, button_width);
@@ -77,7 +78,8 @@ pub fn community(app: &mut PhotocraftApp, ui: &mut egui::Ui, button_width: f32, 
         let t = crate::theme::Tokens::get(ui.ctx());
         ui.label(egui::RichText::new(tl!("An independent build, based on PhotoCraft by the ArtCraft team.")).color(t.text_dim).size(12.5));
         ui.add_space(gap);
-        link_row(app, ui, &[(tl!("PhotoCraft on GitHub"), GITHUB)]);
+        let (maintainer, page) = crate::brand::INDEPENDENT_MAINTAINER;
+        link_row(app, ui, &[(maintainer, page), (tl!("PhotoCraft on GitHub"), GITHUB)]);
     }
 }
 

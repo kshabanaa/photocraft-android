@@ -27,6 +27,10 @@ pub enum Brand {
     Independent,
 }
 
+/// Who makes this fork's independent builds, credited by name (a link to their GitHub profile)
+/// beside the "based on PhotoCraft by the ArtCraft team" credit on the start screen and in About.
+pub const INDEPENDENT_MAINTAINER: (&str, &str) = ("kshabanaa", "https://github.com/kshabanaa");
+
 impl Brand {
     /// This build's brand: [`Brand::Independent`] with the `unbranded` feature, else [`Brand::Official`].
     pub const BUILD: Brand = if cfg!(feature = "unbranded") { Brand::Independent } else { Brand::Official };

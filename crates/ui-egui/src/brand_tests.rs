@@ -47,6 +47,7 @@ fn independent_builds_show_no_artcraft_marks_on_the_start_screen_title_bar_or_ab
     assert_eq!(texts_with(&h, "Discord"), Vec::<String>::new());
     assert_eq!(texts_with(&h, "ArtCraft"), [CREDIT]);
     assert!(h.query_by_label("PhotoCraft on GitHub").is_some(), "the start screen links to PhotoCraft's source");
+    assert!(h.query_by_label(crate::brand::INDEPENDENT_MAINTAINER.0).is_some(), "the start screen credits the build's maintainer");
     // About: the same credit in place of the community links.
     h.state_mut().ui.open_dialog(crate::state::DialogKind::About, Default::default());
     h.run_steps(6);

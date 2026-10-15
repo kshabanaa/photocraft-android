@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Phase 0 spike: no permissions. -->
     <application
-        android:label="PhotoCraft spike"
+        android:label="PhotoCraft"
         android:hasCode="true"
         android:resizeableActivity="true"
         android:theme="@style/Theme.AppCompat.NoActionBar">
