@@ -106,6 +106,25 @@ branch first.
      - a fault-injection test: an encode error, a write error and a kill mid-write must never lose the
        document.
 
+**Status (2026-10-15): done on `android-phase1`.**
+- The three cherry-picks are in (fb2039cb, b4907624, 389b20f9, the last with no conflicts: both sides
+  had registered `photocraft-android` in the layer table identically).
+- SAF open and save: `apps/photocraft-android/src/documents.rs` (pure Rust over a `Provider` trait,
+  host-tested with a fake provider), `bridge.rs` (`bridge::Jni`, no new `unsafe`), and the Java in
+  `PhotoCraftActivity`. Design as built: [04](04-technical-architecture.md) §7.0 and UC-03. Also
+  wired: import/export codecs, background jobs, and preferences in `filesDir/preferences.json` (so
+  Open Recent survives a restart).
+- Still open in 1.5/1.6:
+  - recents whose document is gone are reported when opened, but not yet *marked* in the list
+    (FR-FIO-11 "Not available"; needs a Home screen and menu hook);
+  - thumbnails in Open Recent; MediaStore "Save to Gallery" (FR-FIO-08, Should);
+  - folder pickers (FR-FIO-10, WP 1.7) answer "not available yet";
+  - no Save As format chooser before the system picker: the format follows the typed extension;
+  - an instrumented test against a test `DocumentsProvider`, and the emulator smoke run;
+  - autosave and a flush on pause (WP 1.9): until then a crash while *editing* loses unsaved edits
+    (a crash while *saving* does not).
+- Device checks for the owner: [device-checks-saf.md](device-checks-saf.md).
+
 ## Gates (before every push)
 
 ```sh

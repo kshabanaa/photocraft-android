@@ -31,6 +31,10 @@ pub enum FileDialogRequest {
     Folder { initial_dir: Option<String> },
     /// Where to write, starting from `suggested` (a file name, or the document's own path).
     Save { suggested: String },
+    /// Read again the document at a platform *location* (File › Open Recent of a document from
+    /// Android's Storage Access Framework, UC-03; see [`crate::file_open::is_location`]): no
+    /// dialog is shown, and the answer is [`FileDialogAnswer::Located`].
+    Reopen { location: String },
 }
 
 /// The user's choice (a cancelled dialog answers `None`).
@@ -42,6 +46,11 @@ pub enum FileDialogAnswer {
     Contents(String, Vec<u8>),
     /// Several chosen files' names and contents, in order (the web's multi-select File › Open).
     ContentsMany(Vec<(String, Vec<u8>)>),
+    /// Chosen files the platform read, each with its *location* (Android's Storage Access
+    /// Framework, UC-03): where the desktop has a path, a string the platform can read and write
+    /// again. They open as files from disk do: named after the location's last part, kept for
+    /// File › Save and listed in Open Recent.
+    Located(Vec<(String, Vec<u8>)>),
     /// The path to save to (desktop), or the download's name (web).
     SaveTo(String),
     /// The selected folder's path (desktop).
@@ -109,6 +118,7 @@ impl PhotocraftApp {
             FileDialogRequest::Open { .. } => "open",
             FileDialogRequest::Folder { .. } => "folder",
             FileDialogRequest::Save { .. } => "save",
+            FileDialogRequest::Reopen { .. } => "reopen",
         };
         let then: Then = Box::new(move |app, answer| match answer {
             None => Err(CANCELLED.into()),
@@ -216,10 +226,24 @@ impl PhotocraftApp {
                 }
                 FileDialogAnswer::Contents(name, bytes) => app.open_contents(vec![(name, bytes)]),
                 FileDialogAnswer::ContentsMany(files) => app.open_contents(files),
+                FileDialogAnswer::Located(files) => app.open_located(files),
                 FileDialogAnswer::FolderTo(_) => return Err(UNEXPECTED.into()),
                 FileDialogAnswer::SaveTo(_) | FileDialogAnswer::Unavailable(_) => return Err(UNEXPECTED.into()),
             }
             Ok(Value::Null)
+        })
+    }
+
+    /// Read again the document at a platform `location` (File › Open Recent, the Home screen):
+    /// the platform reads it in the background, and it opens as from File › Open.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn reopen(&mut self, location: &str) -> Result<Value, String> {
+        self.ask_file(FileDialogRequest::Reopen { location: location.to_string() }, |app, answer| match answer {
+            FileDialogAnswer::Located(files) => {
+                app.open_located(files);
+                Ok(Value::Null)
+            }
+            _ => Err(UNEXPECTED.into()),
         })
     }
 
@@ -308,7 +332,7 @@ pub(crate) fn last_used_dir(recent: &[String]) -> Option<String> {
 fn read_picked(answer: FileDialogAnswer) -> Result<(String, Vec<u8>), String> {
     match answer {
         FileDialogAnswer::Contents(name, bytes) => Ok((name, bytes)),
-        FileDialogAnswer::ContentsMany(files) => files.into_iter().next().ok_or_else(|| CANCELLED.into()),
+        FileDialogAnswer::ContentsMany(files) | FileDialogAnswer::Located(files) => files.into_iter().next().ok_or_else(|| CANCELLED.into()),
         FileDialogAnswer::Paths(paths) => {
             let path = paths.into_iter().next().ok_or(CANCELLED)?;
             let bytes = photocraft_format::read_file(std::path::Path::new(&path)).map_err(|e| format!("{}: {e}", display_name(&path)))?;

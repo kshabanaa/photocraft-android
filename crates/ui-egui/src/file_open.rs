@@ -52,6 +52,18 @@ fn dropped_name(f: &egui::DroppedFileHandle) -> String {
     f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped".into())
 }
 
+/// Whether `path` is a *location* rather than a file-system path: `scheme://…`, as the Android
+/// shell names documents from the Storage Access Framework (`saf://<key>/<name>`, UC-03). The UI
+/// treats a location like a path (the format comes from its extension, the title from its last
+/// part, File › Save and Open Recent keep it) but never reads, writes or resolves it itself: the
+/// platform does, through [`Services`](crate::Services).
+pub fn is_location(path: &str) -> bool {
+    let Some((scheme, _)) = path.split_once("://") else { return false };
+    scheme.len() > 1
+        && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
 /// The file name of `path` (the document's display name), or `path` itself when it has none.
 pub fn display_name(path: &str) -> String {
     std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| path.to_string())
@@ -97,9 +109,13 @@ impl PhotocraftApp {
         untitled_name(tl!("Untitled"), |n| self.session.documents().iter().any(|d| d.doc.name == n) || self.jobs.opens.iter().any(|o| o.name == n))
     }
 
-    /// Read and open the file at `path` (see [`open_file`](Self::open_file)).
+    /// Read and open the file at `path` (see [`open_file`](Self::open_file)). A location goes
+    /// back to the platform, which reads it in the background ([`Self::reopen`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_path(&mut self, path: &str) -> Result<Vec<String>, String> {
+        if is_location(path) {
+            return self.reopen(path).map(|_| Vec::new());
+        }
         // Documents opening in the background are read on the worker too (a 2 GB PSB read
         // would block the window). Preset files (brushes, gradients) go the usual way.
         let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
@@ -143,6 +159,28 @@ impl PhotocraftApp {
         }
         crate::jobs_ui::end_batch(&mut self.jobs);
         opened
+    }
+
+    /// Open files the platform read from their locations ([`FileDialogAnswer::Located`]): each as
+    /// [`Self::open_file`] does, in name order (tabs keep that order, as in [`Self::open_paths`]),
+    /// reporting each failure.
+    ///
+    /// [`FileDialogAnswer::Located`]: crate::FileDialogAnswer::Located
+    pub(crate) fn open_located(&mut self, mut files: Vec<(String, Vec<u8>)>) {
+        files.sort_by(|a, b| natural_cmp(&display_name(&a.0), &display_name(&b.0)));
+        let batch = crate::jobs_ui::begin_batch(self);
+        for (seq, (location, bytes)) in files.into_iter().enumerate() {
+            let order = crate::jobs_ui::OpenOrder { batch, seq };
+            let pending = self.jobs.opens.len();
+            match self.open_file(&location, &bytes) {
+                Ok(_) => match self.jobs.opens.get_mut(pending) {
+                    Some(tab) => tab.order = Some(order),
+                    None => crate::jobs_ui::opened_in_order(&mut self.jobs, order),
+                },
+                Err(e) => self.open_failed(&display_name(&location), &e),
+            }
+        }
+        crate::jobs_ui::end_batch(&mut self.jobs);
     }
 
     /// Show "Couldn't open <name>: <error>" as an error (status bar + notice).
@@ -310,6 +348,9 @@ fn digit_run(it: &mut std::iter::Peekable<std::str::Chars>) -> String {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn absolute(p: &str) -> String {
+    if is_location(p) {
+        return p.to_string();
+    }
     std::path::absolute(p).map(|a| a.to_string_lossy().to_string()).unwrap_or_else(|_| p.to_string())
 }
 

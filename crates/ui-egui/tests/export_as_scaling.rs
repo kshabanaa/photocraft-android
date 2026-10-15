@@ -25,7 +25,7 @@ fn harness() -> Option<(Harness, Writes)> {
                         reply.send(match request {
                             FileDialogRequest::Save { suggested } => Some(FileDialogAnswer::SaveTo(suggested)),
                             FileDialogRequest::Folder { .. } => None,
-                            FileDialogRequest::Open { .. } => None,
+                            FileDialogRequest::Open { .. } | FileDialogRequest::Reopen { .. } => None,
                         })
                     })),
                     export: Some(Box::new(|doc, path, settings| {

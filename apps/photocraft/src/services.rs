@@ -159,6 +159,11 @@ fn show_file_dialog(request: FileDialogRequest, parent: Option<&eframe::Frame>, 
             let picked = dialog.save_file();
             Box::pin(async move { picked.await.map(|file| FileDialogAnswer::SaveTo(path_of(&file))) })
         }
+        // Desktop documents have paths; only the Android shell names documents by location (UC-03).
+        FileDialogRequest::Reopen { location } => {
+            reply.send(Some(FileDialogAnswer::Unavailable(format!("{location}: not a file on this computer"))));
+            return;
+        }
     };
     // Without the thread the reply is dropped unanswered, which the app takes as Cancel.
     if let Err(e) = std::thread::Builder::new().name("file dialog".into()).spawn(move || {

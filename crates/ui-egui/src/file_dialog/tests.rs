@@ -794,3 +794,103 @@ fn save_as_openraster_of_what_it_cannot_hold_is_a_copy() {
     assert!(err.contains("OpenRaster"), "{err}");
     assert_eq!(written.borrow().len(), 1);
 }
+
+/// [`app`] that can also decode files: opened bytes become documents.
+fn importing_app() -> (PhotocraftApp, Open, Rc<RefCell<Vec<String>>>) {
+    let (mut app, open, written) = app();
+    app.services.import = Some(Box::new(|name: &str, bytes: &[u8], depth: usize| {
+        photocraft_io::import_with_svg_group_depth(name, bytes, depth).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string())
+    }));
+    (app, open, written)
+}
+
+/// A small PNG.
+fn png_bytes(app: &PhotocraftApp) -> Vec<u8> {
+    photocraft_io::export(&app.session.active().unwrap().doc, "png", &Default::default()).unwrap().bytes
+}
+
+const LOC_A: &str = "saf://00000000000000a1/a.png";
+const LOC_B: &str = "saf://00000000000000b2/b.png";
+
+/// UC-03: a platform that names documents by location (Android's Storage Access Framework)
+/// answers File › Open with `Located`. Each file opens as from disk: named after the location's
+/// last part, in name order, with the location kept for File › Save and Open Recent.
+#[test]
+fn located_answers_open_like_files_from_disk() {
+    let (mut app, open, _) = importing_app();
+    let ctx = egui::Context::default();
+    let png = png_bytes(&app);
+    menus::invoke(&mut app, &ctx, "file.open", json!({})).unwrap();
+    app.poll_file_dialog(&ctx, None);
+    answer(&open, Some(FileDialogAnswer::Located(vec![(LOC_B.into(), png.clone()), (LOC_A.into(), png)])));
+    app.poll_file_dialog(&ctx, None);
+    let opened: Vec<_> = app.session.documents().iter().skip(1).map(|d| (d.doc.name.clone(), d.path.clone())).collect();
+    assert_eq!(opened, [("a.png".to_string(), Some(LOC_A.to_string())), ("b.png".to_string(), Some(LOC_B.to_string()))]);
+    assert_eq!(app.ui.recent_files, [LOC_B, LOC_A], "both in Open Recent, newest first");
+    assert!(!app.ui.status_error, "{}", app.ui.status);
+}
+
+/// Open Recent of a location hands it back to the platform to read (no dialog is shown, and the
+/// app never reads it as a path); the answer opens it again.
+#[test]
+fn open_recent_of_a_location_asks_the_platform_to_read_it() {
+    let (mut app, open, _) = importing_app();
+    let ctx = egui::Context::default();
+    let png = png_bytes(&app);
+    app.push_recent(LOC_A);
+    menus::invoke(&mut app, &ctx, "file.openRecent.0", json!({})).unwrap();
+    app.poll_file_dialog(&ctx, None);
+    assert!(
+        matches!(open.borrow().as_slice(), [(FileDialogRequest::Reopen { location }, _)] if location == LOC_A),
+        "{:?}",
+        open.borrow().first().map(|(r, _)| r.clone())
+    );
+    answer(&open, Some(FileDialogAnswer::Located(vec![(LOC_A.into(), png)])));
+    app.poll_file_dialog(&ctx, None);
+    assert_eq!(app.session.active().unwrap().path.as_deref(), Some(LOC_A));
+    // A platform that can't read it any more answers nothing (and says why itself).
+    menus::invoke(&mut app, &ctx, "file.openRecent.0", json!({})).unwrap();
+    app.poll_file_dialog(&ctx, None);
+    answer(&open, None);
+    app.poll_file_dialog(&ctx, None);
+    assert_eq!(app.session.documents().len(), 2);
+    assert!(!app.ui.status_error);
+}
+
+#[test]
+fn locations_are_not_file_system_paths() {
+    use crate::file_open::is_location;
+    for location in [LOC_A, "saf://k", "content://media/external/images/1", "x-app+v1.2://doc"] {
+        assert!(is_location(location), "{location}");
+    }
+    for path in ["/pics/a.png", "a.png", "C:\\pics\\a.png", "C:/pics/a.png", "\\\\server\\share\\a.png", "1x://a", "a://b", "we ird://a", ""] {
+        assert!(!is_location(path), "{path}");
+    }
+    // The folder an open dialog starts in is the location's folder part, for the platform to map.
+    assert_eq!(last_used_dir(&[LOC_A.into()]).as_deref(), Some("saf://00000000000000a1"));
+    // Opening one (an OS request, say) never resolves it against the working directory: the
+    // platform is asked to read it as it is.
+    let (mut app, open, _) = app();
+    let ctx = egui::Context::default();
+    app.open_paths(&[LOC_A.to_string()]);
+    app.poll_file_dialog(&ctx, None);
+    assert!(
+        matches!(open.borrow().as_slice(), [(FileDialogRequest::Reopen { location }, _)] if location == LOC_A),
+        "{:?}",
+        open.borrow().first().map(|(r, _)| r.clone())
+    );
+}
+
+/// A save to a location reports the document's name, not the location string.
+#[test]
+fn saving_to_a_location_reports_its_name() {
+    let (mut app, open, written) = app();
+    let ctx = egui::Context::default();
+    menus::invoke(&mut app, &ctx, "file.saveAs", json!({})).unwrap();
+    app.poll_file_dialog(&ctx, None);
+    answer(&open, Some(FileDialogAnswer::SaveTo("saf://00000000000000c3/art.psd".into())));
+    app.poll_file_dialog(&ctx, None);
+    assert_eq!(*written.borrow(), ["saf://00000000000000c3/art.psd"]);
+    assert_eq!(app.ui.status, "Saved art.psd");
+    assert_eq!(app.session.active().unwrap().path.as_deref(), Some("saf://00000000000000c3/art.psd"));
+}

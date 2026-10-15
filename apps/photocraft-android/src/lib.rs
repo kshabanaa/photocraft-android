@@ -1,21 +1,23 @@
-//! PhotoCraft on Android (Phase 0 spike): starts the shared `PhotocraftApp` through eframe's
-//! GameActivity backend with default (empty) platform services. Off Android this crate is empty,
-//! so workspace builds and tests on desktop hosts are unaffected.
+//! PhotoCraft on Android: starts the shared `PhotocraftApp` through eframe's GameActivity backend,
+//! with documents through the Storage Access Framework (`documents`, over the JNI `bridge`). Off
+//! Android only the platform-independent parts compile (`documents`, `gesture` and the key
+//! mapping), so workspace builds and their host tests on desktop are unaffected.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 #[cfg(target_os = "android")]
 mod bridge;
+pub mod documents;
 pub mod gesture;
 
 #[cfg(target_os = "android")]
 mod android {
-    use crate::bridge;
+    use crate::{bridge, documents};
     use eframe::egui;
-    use winit::platform::android::activity::input::{ImeOptions, InputType, TextInputAction, TextInputState, TextSpan};
     use photocraft_ui_egui::PhotocraftApp;
     use photocraft_ui_egui::theme::ThemeKind;
     use winit::platform::android::activity::AndroidApp;
+    use winit::platform::android::activity::input::{ImeOptions, InputType, TextInputAction, TextInputState, TextSpan};
 
     /// An independent build (D-01): Cargo.toml turns on `photocraft-ui-egui/unbranded` for Android,
     /// so the ArtCraft marks stay out (docs/brand/LICENSE-brand.txt). Losing that fails the build.
@@ -65,7 +67,12 @@ mod android {
             options,
             Box::new(move |cc| {
                 PhotocraftApp::setup_context(&cc.egui_ctx, ThemeKind::Pro);
-                let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), photocraft_ui_egui::Services::default());
+                let documents = documents::Documents::new(bridge::Jni::new(shell_app.clone()), stage_dir(&shell_app));
+                let prefs = shell_app.internal_data_path().map(|dir| dir.join("preferences.json"));
+                let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), documents::services(&documents, prefs));
+                // Opens and saves run on worker threads, as on the desktop: a large PSD never
+                // stalls the window.
+                app.background_jobs = true;
                 app.set_theme(&cc.egui_ctx, ThemeKind::Pro);
                 if let Some(rs) = cc.wgpu_render_state.clone() {
                     let info = rs.adapter.get_info();
@@ -80,15 +87,37 @@ mod android {
                         app.set_wgpu(rs);
                     }
                 }
-                let sdk = android_system_properties::AndroidSystemProperties::new()
-                    .get("ro.build.version.sdk")
-                    .and_then(|v| v.trim().parse().ok())
-                    .unwrap_or(29);
-                Ok(Box::new(AndroidShell { app, android: shell_app, sdk, logged: None, scale_logged: None, deferred: Vec::new(), ime: Ime::default(), gestures: Default::default(), held: egui::Modifiers::NONE, settle_until: 0.0 }))
+                let sdk =
+                    android_system_properties::AndroidSystemProperties::new().get("ro.build.version.sdk").and_then(|v| v.trim().parse().ok()).unwrap_or(29);
+                Ok(Box::new(AndroidShell {
+                    app,
+                    documents,
+                    android: shell_app,
+                    sdk,
+                    logged: None,
+                    scale_logged: None,
+                    deferred: Vec::new(),
+                    ime: Ime::default(),
+                    gestures: Default::default(),
+                    held: egui::Modifiers::NONE,
+                    settle_until: 0.0,
+                }))
             }),
         );
         if let Err(e) = started {
             log::error!("PhotoCraft could not start: {e}");
+        }
+    }
+
+    /// Where saves are staged before they replace a document (`documents`): app storage that is
+    /// never backed up and never cleared by the system.
+    fn stage_dir(app: &AndroidApp) -> std::path::PathBuf {
+        match bridge::no_backup_dir(app) {
+            Ok(dir) => dir.join("saving"),
+            Err(e) => {
+                log::warn!("{e}");
+                app.internal_data_path().unwrap_or_else(std::env::temp_dir).join("saving")
+            }
         }
     }
 
@@ -100,6 +129,9 @@ mod android {
     ///   so the shell reads that state every frame and replays the changes as egui events.
     struct AndroidShell {
         app: PhotocraftApp,
+        /// Documents through the Storage Access Framework: picker answers, Save As where Save
+        /// can't write, recents and grants (see `documents`).
+        documents: documents::Documents<bridge::Jni>,
         android: AndroidApp,
         /// The device's API level (`ro.build.version.sdk`).
         sdk: u32,
@@ -274,6 +306,7 @@ mod android {
     impl eframe::App for AndroidShell {
         fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
             self.app.logic(ctx, frame);
+            self.documents.frame(&mut self.app, ctx);
         }
 
         fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {

@@ -25,10 +25,17 @@ heif = ["photocraft-codecs/heif"]
 
 [dependencies]
 photocraft-codecs = { workspace = true }
+photocraft-doc = { workspace = true }
 photocraft-engine = { workspace = true }
+# Opening and saving documents (documents.rs): codecs, staged writes, encoder progress.
+photocraft-format = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-raster = { workspace = true }
 photocraft-ui-egui = { workspace = true }
 egui = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # An independent build (D-01, docs/android/11-ai-delivery-plan.md §10): no ArtCraft marks

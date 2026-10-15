@@ -1504,7 +1504,9 @@ impl PhotocraftApp {
                 (false, holds)
             }
         };
-        self.ui.status = crate::i18n::fmt(tl!("Saved {name}"), &[("name", path)]);
+        // A location (UC-03) reads as its name; a path in full.
+        let shown = if file_open::is_location(path) { file_open::display_name(path) } else { path.to_string() };
+        self.ui.status = crate::i18n::fmt(tl!("Saved {name}"), &[("name", shown.as_str())]);
         if !copy {
             // A background save may finish while another document is active (or after its
             // document was closed, when there is nothing left to record).

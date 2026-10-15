@@ -384,7 +384,8 @@ fn services(inbox: Inbox) -> Services {
                 reply.send(answer);
             }),
             // Browser folder handles cannot be represented as filesystem paths for engine commands.
-            FileDialogRequest::Folder { .. } => reply.send(None),
+            // Open Recent is off on the web, so nothing asks to reopen a location (UC-03).
+            FileDialogRequest::Folder { .. } | FileDialogRequest::Reopen { .. } => reply.send(None),
             // No save dialog on the web: the suggested name becomes the download name.
             FileDialogRequest::Save { suggested } => {
                 let name = std::path::Path::new(&suggested).file_name().map_or_else(|| suggested.clone(), |n| n.to_string_lossy().to_string());

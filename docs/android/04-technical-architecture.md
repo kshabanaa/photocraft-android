@@ -334,7 +334,7 @@ Field list as in `crates/ui-egui/src/lib.rs` at the baseline commit.
 | `import`, `export`, `encode_png` | Reuse the desktop implementations, moved from `apps/photocraft/src/services.rs` into `photocraft-shell` (pure Rust) | P1 | Must |
 | `save_file` | Worker thread: encode fully (desktop `ExportFn` path) into memory and a temp copy in `cacheDir/save/`; call `SaveCtl::commit`; then write the target through a bridge-opened descriptor (`openFileDescriptor(uri, "wt")`; plain `"w"` does not truncate on every provider); fsync; delete the temp copy only after success | P1 | Must |
 | `write` | The same target-write path, for small synchronous writes (swatches, presets, history log export) | P1 | Must |
-| `file_dialog` | `FileDialogRequest::Open { multiple, extensions }` maps to `OpenDocument` or `OpenMultipleDocuments` (MIME list derived from `extensions`, plus `*/*`); `Folder` maps to `OpenDocumentTree`; `Save { suggested }` maps to `CreateDocument(mime)` with the suggested title. Results arrive as a JNI callback, then `FileDialogReply::send`. File bytes are read on a worker from the descriptor and returned as `FileDialogAnswer::Contents` or `ContentsMany` (the variants the web build already uses), plus the document origin (UC-03) | P1 | Must |
+| `file_dialog` | `FileDialogRequest::Open { multiple, extensions }` maps to `OpenDocument` or `OpenMultipleDocuments` (MIME list derived from `extensions`, plus `*/*`); `Folder` maps to `OpenDocumentTree`; `Save { suggested }` maps to `CreateDocument(mime)` with the suggested title. Results arrive as a JNI callback, then `FileDialogReply::send`. File bytes are read on a worker from the descriptor and returned as `FileDialogAnswer::Contents` or `ContentsMany` (the variants the web build already uses), plus the document origin (UC-03). **As built (2026-10-15, `apps/photocraft-android/src/documents.rs`):** answers are `FileDialogAnswer::Located` (bytes plus location); `Reopen` serves Open Recent; `Folder` answers "not available yet" until WP 1.7. See §7.0 for how the bridge differs from this sketch | P1 | Must |
 | `inbox` | `VIEW`, `EDIT`, `SEND` and `SEND_MULTIPLE` intents (including `onNewIntent`) and Photo Picker results are queued as (name, bytes, origin) | P1 | Must |
 | `os_events` | Back (predictive back callback), open-documents, memory pressure, insets and configuration changes | P1 | Must |
 | `load_prefs`, `save_prefs` | `filesDir/prefs.json`, written atomically (temp file plus rename) | P1 | Must |
@@ -405,6 +405,31 @@ sequenceDiagram
   `write_document(uri, bytes) -> Result<()>` and `system_fonts() -> Result<Vec<PathBuf>>`. The rest of the crate
   never sees JNI types.
 - **Size.** The Kotlin side is about 10 small files and ≤ about 1,500 lines (NFR-MAINT-03).
+
+### 7.0 As built for documents (WP 1.5/1.6, 2026-10-15)
+
+The SAF bridge follows D-03 (Java, in `PhotoCraftActivity`) and keeps `unsafe` to the one existing
+block in `bridge.rs`. It differs from the sketch above in three ways, each to shrink the risky surface:
+
+- **No native-method exports.** Java queues picker answers (`takePickerResult`); `Documents::frame`
+  polls them every frame (and asks for frames only while a picker or worker is busy). Workers wake
+  the app through `FileDialogReply::send`.
+- **No descriptor ownership in Rust.** Reads go through `openRead` / `readChunk` / `closeRead` into a
+  reused 1 MiB Java array (so the Java heap limit never applies and `photocraft_format::read::read_all`
+  bounds the total). Writes pass the *staged* file's descriptor to `writeDocument`, which duplicates
+  it (`ParcelFileDescriptor.fromFd`) and copies into the target: Java owns the target descriptor, so
+  `closeWithError` tells cloud providers to drop a partial upload. No `OwnedFd::from_raw_fd`.
+- **Staged saves live in `noBackupFilesDir/saving`**, not `cacheDir/save`: the system never clears
+  it under storage pressure and it is never backed up, so a staged copy survives until it is
+  recovered (it is the recovery entry FR-FIO-07 asks for until WP 1.9 wires the autosave store).
+
+Safe write, in order: encode in memory (an encoder error leaves the target untouched) → write the
+bytes to `<id>.data` and fsync, then `<id>.json` (atomic) → `SaveCtl::commit` → Java opens the
+target `"rw"` (falling back to `"wt"`), copies, truncates to length, syncs and closes, or
+`closeWithError` on any failure. Success deletes the staged copy. A failed write keeps it (the
+document stays open and unsaved; the message says a copy is kept); a process killed mid-write leaves
+it too, and the next start offers it through `Services::recover`, bound to the same location, so
+File › Save finishes the job. Copies go once their document is saved or closed.
 
 ### 7.1 Kotlin activity (sketch)
 
@@ -683,7 +708,7 @@ preference because Android apps get no shell environment.
 |---|---|---|---|---|
 | UC-01 | `apps/photocraft-android` (new), `xtask/src/layers.rs` | New app crate; compiles to an empty library off Android; registered with the layer checker | The shell | M |
 | UC-02 | New `crates/shell` (`photocraft-shell`) and `apps/photocraft/src/*` | Move platform-independent shell code out of the desktop app: the import, export and save worker from `services.rs`, recovery wiring, the GPU crash-marker logic from `gpu_startup.rs`, `crash_guard.rs`, the logging core, `control_server.rs` | Desktop and Android share behaviour and fixes | M–L |
-| UC-03 | `crates/ui-egui/src/file_dialog.rs`, `file_open.rs` | A document **origin** (an opaque string such as a `content://` URI, or a folder origin) attached to opened documents and dialog answers, so Save, Recents, titles and folder commands work without file-system paths; display names supplied by the shell | SAF is URI-based | M |
+| UC-03 | `crates/ui-egui/src/file_dialog.rs`, `file_open.rs` | A document **origin** (an opaque string such as a `content://` URI, or a folder origin) attached to opened documents and dialog answers, so Save, Recents, titles and folder commands work without file-system paths; display names supplied by the shell. **Documents done 2026-10-15 (WP 1.5/1.6):** the origin is a path-shaped *location*, `saf://<key>/<display name>` (`file_open::is_location`), kept where the desktop keeps a path, so the format still comes from the extension and the title from the last part. New `FileDialogAnswer::Located` (files the platform read, with their locations) and `FileDialogRequest::Reopen` (Open Recent hands a location back to the platform to read); locations are never made absolute, and "Saved …" shows the name. Folder origins (FR-FIO-10) are still open | SAF is URI-based | M |
 | UC-04 | `crates/ui-egui/src/lib.rs` (`Services`) | New optional fields: `safe_area`, `memory_pressure`, `text_entry`, `share`, `form_factor`, `stylus_samples` | Android-only needs, invisible to desktop and web | S–M |
 | UC-05 | `crates/ui-egui/src/gpu_canvas.rs` | `detect_physical_memory` for `target_os = "android"` (`/proc/meminfo`) and a mobile budget factor | Memory guard | S |
 | UC-06 | `crates/text/src/fonts.rs`, `cjk.rs` | Android font directories and CJK fallback; an API to register shell-provided font files | Fonts | S |
