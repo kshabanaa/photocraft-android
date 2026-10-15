@@ -1,8 +1,14 @@
-// Phase 0 spike: packages libphotocraft_android.so (built by cargo-ndk into src/main/jniLibs)
-// with AndroidX GameActivity. No Kotlin or Java sources: the manifest names GameActivity itself.
+// Packages libphotocraft_android.so (built by cargo-ndk into src/main/jniLibs) with AndroidX
+// GameActivity and PhotoCraftActivity (src/main/java).
 plugins {
     id("com.android.application")
 }
+
+// `-Pphotocraft.download=true` (packaging/android/release-apk.sh): APKs to download from a GitHub
+// release. One APK per ABI, so a phone downloads only its own library, with the native library
+// compressed (about half the size of the stored, page-aligned library Play wants; Android extracts
+// it on install).
+val download = providers.gradleProperty("photocraft.download").map { it.toBoolean() }.getOrElse(false)
 
 android {
     namespace = "local.photocraft.spike"
@@ -15,12 +21,30 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.0.1-spike"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        if (!download) {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
     }
     buildTypes {
-        getByName("release") { isMinifyEnabled = false }
+        // Test releases are signed with the development key until the release key exists (owner
+        // task H-12): installable side by side with nothing else, upgradable only by builds signed
+        // the same way.
+        getByName("release") {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
-    packaging { jniLibs { useLegacyPackaging = false } }
+    if (download) {
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "x86_64")
+                isUniversalApk = false
+            }
+        }
+    }
+    packaging { jniLibs { useLegacyPackaging = download } }
 }
 
 dependencies {
