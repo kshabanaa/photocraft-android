@@ -242,13 +242,13 @@ pub fn open_mime_types(extensions: Option<&[String]>) -> Vec<String> {
     types
 }
 
-/// The MIME type a Save picker creates a document with (FR-FIO-06): the format's own for the
-/// common image formats (so galleries list exports properly, FR-FIO-08), else
-/// `application/octet-stream`, which providers create under the name as typed, so a user can
-/// switch the format of a Save As by typing another extension.
-pub fn create_mime(ext: &str) -> &'static str {
-    mime_for(ext).filter(|m| COMMON.contains(m)).unwrap_or(OCTET)
-}
+/// The MIME type a Save picker creates every document with: `application/octet-stream`, whatever
+/// the format (FR-FIO-06). Providers append the extension of a typed create to the name the user
+/// typed when it doesn't match: on a Galaxy S20+ (Android 13), a JPEG's Save As typed as
+/// `name.pcraft` was created as `name.pcraft.jpg` and saved as a JPEG. A typeless create keeps the
+/// name as typed, so typing another extension switches the format. Exports still show in the
+/// gallery: MediaStore types files on device storage by their extension (FR-FIO-08).
+pub const CREATE_MIME: &str = OCTET;
 
 // ------------------------------------------------------------------ errors
 
@@ -390,12 +390,7 @@ pub fn parse_described(fields: &[String]) -> Described {
 
 /// `persistedGrants`' answer: `{uri, mode, uri, mode, …}`, modes "r", "w" or "rw".
 pub fn parse_grants(flat: &[String]) -> Vec<Grant> {
-    flat.chunks_exact(2)
-        .filter_map(|pair| match pair {
-            [uri, mode] => Some(Grant { uri: uri.clone(), write: mode.contains('w') }),
-            _ => None,
-        })
-        .collect()
+    flat.as_chunks::<2>().0.iter().map(|[uri, mode]| Grant { uri: uri.clone(), write: mode.contains('w') }).collect()
 }
 
 /// The Android side of documents: pickers, provider queries, reads, writes and grants
@@ -707,7 +702,7 @@ impl<P: Provider> Documents<P> {
             FileDialogRequest::Save { suggested } => {
                 let (name, ext) = save_name(&suggested);
                 let initial = self.uri_of(&suggested);
-                let picker = Picker::Create { mime_type: create_mime(&ext).into(), name: name.clone(), initial };
+                let picker = Picker::Create { mime_type: CREATE_MIME.into(), name: name.clone(), initial };
                 self.start(picker, Waiting::Save { reply, name, ext });
             }
             FileDialogRequest::Folder { .. } => reply.send(Some(FileDialogAnswer::Unavailable(NO_FOLDERS.into()))),

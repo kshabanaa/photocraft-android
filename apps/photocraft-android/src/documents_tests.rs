@@ -342,16 +342,12 @@ fn open_pickers_offer_every_format_and_any_file() {
 }
 
 #[test]
-fn create_pickers_type_common_images_and_keep_typed_names_for_the_rest() {
-    assert_eq!(create_mime("png"), "image/png");
-    assert_eq!(create_mime("JPG"), "image/jpeg");
-    assert_eq!(create_mime("webp"), "image/webp");
-    assert_eq!(create_mime("tif"), "image/tiff");
-    // Layered and professional formats: providers keep the name as typed, so Save As can switch
-    // format by typing another extension.
-    for ext in ["psd", "psb", "pcraft", "ora", "tga", "exr", "ico", "aco", "csv", ""] {
-        assert_eq!(create_mime(ext), "application/octet-stream", "{ext}");
-    }
+fn create_pickers_are_typeless_so_the_typed_name_decides_the_format() {
+    // A typed create made Android's picker append `.jpg` to a name typed as `.pcraft` (Galaxy
+    // S20+): every create is typeless, and the name the provider reports decides the format.
+    assert_eq!(CREATE_MIME, "application/octet-stream");
+    assert_eq!(created_location("k", "photo.pcraft", "photo.jpg", "jpg"), "saf://k/photo.pcraft");
+    assert_eq!(created_location("k", "photo", "photo.jpg", "jpg"), "saf://k/photo.jpg", "a name typed without an extension keeps the offered format");
 }
 
 #[test]
